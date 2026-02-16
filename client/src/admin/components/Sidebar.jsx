@@ -16,7 +16,7 @@ export const Sidebar = ({
   return (
     <aside
       className={`
-        relative flex-shrink-0 flex flex-col bg-white border-r border-stone-100
+        relative flex-shrink-0 flex flex-col bg-white border-r border-stone-100 overflow-hidden
         transition-all duration-300 ease-in-out
         ${collapsed ? 'w-[60px]' : 'w-[220px]'}
       `}

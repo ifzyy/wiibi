@@ -228,7 +228,7 @@ const Navigation = () => {
                         Request Free Quote <span>↗</span>
                       </a>
                       <a
-                        href="/about"
+                        href="/services"
                         className="text-gray-400 text-xs font-bold border-b border-gray-300 pb-0.5 hover:text-[#ffaa14] transition flex items-center gap-1"
                       >
                         Learn more <span>↗</span>

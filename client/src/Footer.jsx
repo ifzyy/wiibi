@@ -19,11 +19,11 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-white border-t border-gray-100">
+    <footer className="bg-white  w-full border-t border-gray-100">
       <div className="container mx-auto flex flex-col lg:flex-row">
         
         {/* Left Branding & Socials Side */}
-        <div className="lg:w-2/5 p-8 lg:p-16 border-b lg:border-b-0 lg:border-r border-gray-200">
+        <div className="lg:w-1.8/5 p-8 lg:p-16 border-b lg:border-b-0 lg:border-r border-gray-200">
           <div className="flex items-center gap-2 mb-8">
             <img src={WiibiLogo} alt="Wiibi Logo" className="w-6 h-6" />
             <span className="font-bold text-gray-900">Wiibi Energy</span>
@@ -51,7 +51,7 @@ const Footer = () => {
         </div>
 
         {/* Right Links Grid */}
-        <div className="lg:w-3/5 grid grid-cols-2 md:grid-cols-4">
+        <div className="lg:w-3.2/5 grid grid-cols-2 md:grid-cols-4">
           {footerLinks.map((section, idx) => (
             <div key={idx} className="p-8 lg:p-16 border-r border-gray-200 last:border-r-0">
               <h4 className="font-bold text-gray-900 mb-8">{section.title}</h4>

@@ -1,5 +1,6 @@
 import { EditableText, EditableImage } from '../components/Editable.jsx';
-
+import { MainStepsRenderer } from './MainStepsRendere.jsx';
+import { AboutHeroRenderer } from './AboutHeroRenderer.jsx';
 // ── Hero ──────────────────────────────────────────────────────────────────────
 export const HeroSection = ({ content, onChange }) => {
   const u = (f, v) => onChange({ ...content, [f]: v });
@@ -274,4 +275,5 @@ export const SECTION_RENDERERS = {
   'testimonials':  TestimonialsSection,
   'faq-teaser':    FaqTeaserSection,
   'cta':           CtaSection,
+
 };

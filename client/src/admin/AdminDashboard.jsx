@@ -1,19 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
-import { setAuthToken, PAGES } from './utils/api.js';
-import { LoginScreen } from './pages/Login.jsx';
-import { Sidebar } from './components/Sidebar.jsx';
-import { TopBar } from './components/TopBar.jsx';
-import { PageEditor } from './pages/PageEditor.jsx';
-import ProductCatalogPage from "./pages/ProductCatalog.jsx"
-import { BlogManagerPage } from './pages/BlogManager.jsx';
-import { SettingsPage } from './pages/Settings.jsx';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-
+import { useState, useEffect, useRef } from "react";
+import { setAuthToken, PAGES } from "./utils/api.js";
+import { LoginScreen } from "./pages/Login.jsx";
+import { Sidebar } from "./components/Sidebar.jsx";
+import { TopBar } from "./components/TopBar.jsx";
+import { PageEditor } from "./pages/PageEditor.jsx";
+import ProductCatalogPage from "./pages/ProductCatalog.jsx";
+import { BlogManagerPage } from "./pages/BlogManager.jsx";
+import { SettingsPage } from "./pages/Settings.jsx";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import HomePageEditor from "./pages/HomepageEditor.jsx";
+import ContactPageEditor from "./pages/ContactPageEditor.jsx";
+import AboutPageEditor from "./pages/AboutPageEditor.jsx";
 export default function AdminDashboard() {
-  const [token, setToken]           = useState(localStorage.getItem('adminToken') || '');
-  const [activeNav, setActiveNav]   = useState('pages');
-  const [activePageId, setActivePageId] = useState('page-home');
+  const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
+  const [activeNav, setActiveNav] = useState("pages");
+  const [activePageId, setActivePageId] = useState("page-home");
 
   // Track unsaved changes per page
   const [pageChanges, setPageChanges] = useState({});
@@ -31,13 +33,13 @@ export default function AdminDashboard() {
   };
 
   const logout = () => {
-    localStorage.removeItem('adminToken');
-    setToken('');
-    setAuthToken('');
+    localStorage.removeItem("adminToken");
+    setToken("");
+    setAuthToken("");
   };
 
   const handleHasChanges = (changed) => {
-    setPageChanges(prev => ({ ...prev, [activePageId]: changed }));
+    setPageChanges((prev) => ({ ...prev, [activePageId]: changed }));
   };
 
   const handleSave = () => {
@@ -45,8 +47,8 @@ export default function AdminDashboard() {
   };
 
   const handlePreview = () => {
-    const page = PAGES.find(p => p.id === activePageId);
-    if (page) window.open(`${window.location.origin}/${page.slug}`, '_blank');
+    const page = PAGES.find((p) => p.id === activePageId);
+    if (page) window.open(`${window.location.origin}/${page.slug}`, "_blank");
   };
 
   if (!token) {
@@ -55,7 +57,7 @@ export default function AdminDashboard() {
 
   return (
     <div
-      className="h-screen flex bg-stone-50 overflow-hidden"
+      className=" flex bg-stone-50 overflow-hidden"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
       <link
@@ -85,18 +87,36 @@ export default function AdminDashboard() {
           onPreview={handlePreview}
         />
 
-        <main className="flex-1 overflow-hidden">
-          {activeNav === 'pages' && (
-            <PageEditor
-              key={activePageId}
-              pageId={activePageId}
-              onHasChanges={handleHasChanges}
-              onSaveRef={saveRef}
-            />
+        <main className="flex-1 ">
+          {activeNav === "pages" && (
+            <>
+              {activePageId === "page-home" && (
+                <HomePageEditor
+                  onHasChanges={handleHasChanges}
+                  onSaveRef={saveRef}
+                  token={token}
+                />
+              )}
+              {activePageId === "page-about" && (
+                <AboutPageEditor
+                  onHasChanges={handleHasChanges}
+                  onSaveRef={saveRef}
+                  token={token}
+                />
+              )}
+              {activePageId === "page-contact" && (
+                <ContactPageEditor
+                  onHasChanges={handleHasChanges}
+                  onSaveRef={saveRef}
+                  token={token}
+                />
+              )}
+            </>
           )}
-          {activeNav === 'products' && <ProductCatalogPage token={token}/>}
-          {activeNav === 'blog'     && <BlogManagerPage />}
-          {activeNav === 'settings' && <SettingsPage />}
+          {activeNav === "products" && <ProductCatalogPage token={token} />}
+          {activeNav === "about" && <AboutPage />}
+          {activeNav === "blog" && <BlogManagerPage />}
+          {activeNav === "settings" && <SettingsPage />}
         </main>
       </div>
 
@@ -105,11 +125,11 @@ export default function AdminDashboard() {
         autoClose={3000}
         toastStyle={{
           fontFamily: "'DM Sans', sans-serif",
-          fontSize: '13px',
+          fontSize: "13px",
           fontWeight: 600,
-          borderRadius: '14px',
-          border: '1px solid #e7e5e4',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.08)',
+          borderRadius: "14px",
+          border: "1px solid #e7e5e4",
+          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
         }}
         closeButton={false}
       />
