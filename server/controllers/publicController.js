@@ -307,3 +307,80 @@ export const getProductBySlug = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// ── PUBLIC: List projects
+export const getPublicProjects = async (req, res) => {
+  try {
+    const cacheKey = CACHE_KEY_LIST;
+    const cached = publicCache.get(cacheKey);
+
+    if (cached) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const { page = 1, limit = 12 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await db.Project.findAndCountAll({
+      where: { is_visible: true },
+      include: [
+        { model: db.Media, as: 'featuredImage' },
+      ],
+      attributes: [
+        'id', 'title', 'slug', 'year', 'location', 'type',
+        'featured_image_id', 'is_featured',
+      ],
+      order: [['is_featured', 'DESC'], ['display_order', 'ASC'], ['created_at', 'DESC']],
+      limit: parseInt(limit),
+      offset,
+    });
+
+    const payload = {
+      projects: rows,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        pages: Math.ceil(count / limit),
+        limit: parseInt(limit),
+      },
+    };
+
+    publicCache.set(cacheKey, payload);
+    res.set('X-Cache', 'MISS');
+    res.json(payload);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+// ── PUBLIC: Get single project detail
+export const getProjectBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const cacheKey = CACHE_KEY_DETAIL(slug);
+    const cached = publicCache.get(cacheKey);
+
+    if (cached) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const project = await db.Project.findOne({
+      where: { slug, is_visible: true },
+      include: [
+        { model: db.Media, as: 'featuredImage' },
+        { model: db.Media, as: 'galleryImages' },
+      ],
+    });
+
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    publicCache.set(cacheKey, project);
+    res.set('X-Cache', 'MISS');
+    res.json(project);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

@@ -12,6 +12,16 @@ module.exports = {
         type: Sequelize.STRING(500),
         allowNull: false,
       },
+      optimized_url: {
+        type: Sequelize.STRING(500),
+        allowNull: true,
+        comment: 'URL of resized/optimized version (for CDN or local processing)',
+      },
+      thumbnail_url: {
+        type: Sequelize.STRING(500),
+        allowNull: true,
+        comment: 'Small preview version for admin library',
+      },
       filename: {
         type: Sequelize.STRING(255),
         allowNull: false,
@@ -50,6 +60,32 @@ module.exports = {
         type: Sequelize.TEXT,
         allowNull: true,
       },
+      // ── Critical for admin control & traceability ──
+      uploaded_by: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        comment: 'Admin/user who uploaded this file (audit trail)',
+      },
+      entity_type: {
+        type: Sequelize.STRING(50),
+        allowNull: true,
+        comment: 'Polymorphic: product, project, page_section, blog_post, testimonial, etc.',
+      },
+      entity_id: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        comment: 'ID of the parent entity this media belongs to',
+      },
+      is_featured: {
+        type: Sequelize.BOOLEAN,
+        defaultValue: false,
+        comment: 'Is this the primary/featured image for its entity?',
+      },
+      display_order: {
+        type: Sequelize.INTEGER,
+        defaultValue: 0,
+        comment: 'Order for gallery images',
+      },
       created_at: {
         type: Sequelize.DATE,
         allowNull: false,
@@ -66,7 +102,12 @@ module.exports = {
       },
     });
 
+    // ── Indexes for performance & queries ──
     await queryInterface.addIndex('media', ['type']);
+    await queryInterface.addIndex('media', ['entity_type', 'entity_id']);
+    await queryInterface.addIndex('media', ['uploaded_by']);
+    await queryInterface.addIndex('media', ['is_featured']);
+    await queryInterface.addIndex('media', ['display_order']);
   },
 
   async down(queryInterface) {
