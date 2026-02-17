@@ -36,22 +36,22 @@ const BlogPage = () => {
     <main className="bg-white min-h-screen">
       {/* 1. BREADCRUMB & HEADER */}
       <header className="max-w-7xl mx-auto px-6 pt-16 pb-12">
-        <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-stone-400 mb-6">
-          <span className="hover:text-stone-900 cursor-pointer">Home</span>
+        <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#FFAA14 ] -400 mb-6">
+          <span className="hover:text-[#FFAA14 ]   cursor-pointer">Home</span>
           <ChevronRight size={10} strokeWidth={3} />
           <span className="text-amber-500 uppercase">Our Services</span>
         </nav>
         <span className="text-amber-500 font-bold text-[11px] uppercase tracking-[0.3em] block mb-3">
           {header.sub_heading}
         </span>
-        <h1 className="text-5xl font-black text-stone-900 tracking-tight">
+        <h1 className="text-5xl font-black text-[#FFAA14 ]   tracking-tight">
           {header.main_heading}
         </h1>
       </header>
 
       {/* 2. CATEGORY FILTER BAR */}
       <div className="max-w-7xl mx-auto px-6 mb-16 overflow-x-auto">
-        <div className="flex items-center gap-8 border-b border-stone-100 min-w-max">
+        <div className="flex items-center gap-8 border-b  border-stone-50 -100 min-w-max">
           {categories.map((cat) => (
             <button
               key={cat}
@@ -59,7 +59,7 @@ const BlogPage = () => {
               className={`pb-4 text-sm font-bold transition-all relative ${
                 activeCategory === cat
                   ? "text-amber-500"
-                  : "text-stone-400 hover:text-stone-600"
+                  : "text-[#FFAA14 ] -400 hover:text-[#FFAA14 ] -600"
               }`}
             >
               {cat}
@@ -77,8 +77,8 @@ const BlogPage = () => {
           {posts.map((post) => (
             <article key={post.id} className="group cursor-pointer">
               {/* Feature Image */}
-              <div className="aspect-[16/10] bg-stone-50 rounded-[2rem] overflow-hidden mb-8 border border-stone-100 transition-all duration-500 group-hover:shadow-2xl group-hover:shadow-stone-200/50">
-                <div className="w-full h-full flex items-center justify-center text-stone-200 font-black italic tracking-widest uppercase">
+              <div className="aspect-[16/10] bg-[#FFAA14 ] -50 rounded-[2rem] overflow-hidden mb-8 border  border-stone-50 -100 transition-all duration-500 group-hover:shadow-2xl group-hover:shadow-[#FFAA14 ] -200/50">
+                <div className="w-full h-full flex items-center justify-center text-[#FFAA14 ] -200 font-black italic tracking-widest uppercase">
                   [{post.main_image}]
                 </div>
               </div>
@@ -89,7 +89,7 @@ const BlogPage = () => {
                   {post.category}
                 </span>
 
-                <h2 className="text-3xl font-black text-stone-900 leading-tight tracking-tight flex items-start gap-2 group-hover:text-amber-600 transition-colors">
+                <h2 className="text-3xl font-black text-[#FFAA14 ]   leading-tight tracking-tight flex items-start gap-2 group-hover:text-amber-600 transition-colors">
                   {post.title}
                   <ArrowUpRight
                     className="mt-1 opacity-40 group-hover:opacity-100 group-hover:translate-x-1 group-hover:-translate-y-1 transition-all"
@@ -97,23 +97,23 @@ const BlogPage = () => {
                   />
                 </h2>
 
-                <p className="text-stone-400 text-sm leading-relaxed line-clamp-3 font-medium max-w-lg">
+                <p className="text-[#FFAA14 ] -400 text-sm leading-relaxed line-clamp-3 font-medium max-w-lg">
                   {post.excerpt}
                 </p>
 
                 {/* Author Section */}
                 <div className="flex items-center gap-4 pt-4">
-                  <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center overflow-hidden border border-stone-100">
+                  <div className="w-12 h-12 rounded-full bg-[#FFAA14 ] -100 flex items-center justify-center overflow-hidden border  border-stone-50 -100">
                     {/* Author Avatar Placeholder */}
-                    <div className="text-[10px] font-black text-stone-300 uppercase">
+                    <div className="text-[10px] font-black text-[#FFAA14 ] -300 uppercase">
                       {post.author.name[0]}
                     </div>
                   </div>
                   <div>
-                    <h5 className="text-stone-900 font-black text-sm">
+                    <h5 className="text-[#FFAA14 ]   font-black text-sm">
                       {post.author.name}
                     </h5>
-                    <p className="text-stone-400 text-[10px] font-black uppercase tracking-widest">
+                    <p className="text-[#FFAA14 ] -400 text-[10px] font-black uppercase tracking-widest">
                       {post.author.date}
                     </p>
                   </div>

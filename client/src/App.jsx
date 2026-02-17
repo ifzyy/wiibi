@@ -7,6 +7,10 @@ import AboutPage from "./pages/AboutPage";
 import ServicesPage from "./pages/ServicesPage";
 import ContactPage from "./pages/ContactPage";
 import BlogPage from "./pages/BlogPage";
+import StorePage from "./pages/StorePage";
+import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDetailPage from "./pages/ProjectDetailPage";
+import OrderManagement from "./admin/pages/OrderManagement";
 function App() {
   return (
     <BrowserRouter>
@@ -25,6 +29,12 @@ function App() {
                   <Route path="/about" element={<AboutPage />} />
                   <Route path="/blog" element={<BlogPage />} />
                   <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/store" element={<StorePage />} />
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route
+                    path="/project/detail"
+                    element={<ProjectDetailPage />}
+                  />
                   {/* All other public pages go here when ready */}
                   {/* <Route path="/:slug" element={<DynamicPage />} /> */}
                   {/* <Route path="/store" element={<StorePage />} /> */}
@@ -38,7 +48,7 @@ function App() {
 
         {/* Admin route – isolated, no Nav or Footer */}
         <Route path="/admin" element={<AdminDashboard />} />
-
+<Route path="/order" element={<OrderManagement />} />
         {/* Optional: 404 for unmatched routes */}
         {/* <Route path="*" element={<NotFound />} /> */}
       </Routes>

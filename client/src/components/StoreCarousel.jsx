@@ -206,14 +206,14 @@ function StoreCarousel() {
                       />
                     </div>
 
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">
+                    <h3 className="text-lg font-bold text-gray  mb-1">
                       {product.name}
                     </h3>
                     <p className="text-gray-500 text-sm mb-4 max-w-[200px] text-center leading-tight">
                       {product.short_description ||
                         product.description?.substring(0, 80) + "..."}
                     </p>
-                    <span className="text-2xl font-semibold text-gray-900 mb-8">
+                    <span className="text-2xl font-semibold text-gray  mb-8">
                       ₦
                       {product.sale_price ||
                         product.price?.toLocaleString() ||

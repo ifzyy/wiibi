@@ -269,6 +269,14 @@ export const getPublicProducts = async (req, res) => {
   }
 };
 
+export const getPublicFaqs = async (req, res) => {
+  const faqs = await db.Faq.findAll({
+    where: { is_visible: true },
+    order: [['display_order', 'ASC']],
+    attributes: ['id', 'question', 'answer'],
+  });
+  res.json(faqs);
+};
 export const getProductBySlug = async (req, res) => {
   try {
     const { slug } = req.params;

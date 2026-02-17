@@ -1,27 +1,57 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import PromoHeader from "./PromoHeader";
 import WiibiLogo from "./assets/wiibi-logo.svg";
-
+import AuthModal from "./Auth/AuthModal";
 const Navigation = () => {
   const [hoveredDropdown, setHoveredDropdown] = useState(null);
-  const timeoutRef = useRef(null);
+  const openTimeoutRef = useRef(null);
+  const closeTimeoutRef = useRef(null);
   const currentPath = window.location.pathname;
 
-  // Handles the "mouse leave" delay so the menu doesn't vanish instantly
+  // 1. OPEN LOGIC: Detects intent with a 300ms dwell delay
   const handleMouseEnter = (label) => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setHoveredDropdown(label);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+
+    openTimeoutRef.current = setTimeout(() => {
+      setHoveredDropdown(label);
+    }, 300);
   };
 
+  // 2. CLOSE LOGIC: Small buffer for mouse movement
   const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+
+    closeTimeoutRef.current = setTimeout(() => {
       setHoveredDropdown(null);
-    }, 150); // 150ms buffer to move mouse from link to dropdown
+    }, 150);
+  };
+
+  // 3. CLICK LOGIC: Instant close for better UX on navigation
+  const handleLinkClick = () => {
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    setHoveredDropdown(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+  // Auth Modal States
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authView, setAuthView] = useState("login"); // 'login' or 'signup'
+
+  const openAuth = (view) => {
+    setAuthView(view);
+    setIsAuthOpen(true);
+    setHoveredDropdown(null); // Close any open mega menus
   };
 
   const menuItems = [
-    { label: "Store", hasDropdown: true }, // Removed href: trigger only
-    { label: "Projects", hasDropdown: true }, // Removed href: trigger only
+    { label: "Store", href: "/store", hasDropdown: true },
+    { label: "Projects", href: "/projects", hasDropdown: true },
     { label: "Solar Calculator", href: "/calculator" },
     { label: "Blog", href: "/blog" },
     { label: "Contact Us", href: "/contact" },
@@ -31,31 +61,38 @@ const Navigation = () => {
 
   return (
     <>
-      {/* Backdrop Blur */}
       <div
         className={`fixed inset-0 bg-black/5 backdrop-blur-sm z-40 transition-opacity duration-300 pointer-events-none ${
-          hoveredDropdown ? "opacity-100" : "opacity-0"
+          hoveredDropdown || isAuthOpen ? "opacity-100" : "opacity-0"
         }`}
       />
-
-      {/* Sticky Container */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        view={authView}
+        setView={setAuthView}
+      />
       <header className="sticky top-0 z-50 bg-white">
         <PromoHeader />
         <nav className="border-b border-gray-100 relative bg-white">
           <div className="container mx-auto px-6">
             <div className="flex justify-between items-center h-20">
-              {/* Logo */}
-              <a className="flex items-center gap-2" href="/">
+              <a
+                className="flex items-center gap-2"
+                href="/"
+                onClick={handleLinkClick}
+              >
                 <img src={WiibiLogo} alt="Wiibi Logo" className="w-8 h-8" />
                 <span className="font-bold text-lg text-[#1A1102]">
                   Wiibi Energy
                 </span>
               </a>
 
-              {/* Desktop Links */}
               <ul className="hidden lg:flex items-center gap-8">
                 {menuItems.map((item) => {
-                  const isActive = currentPath === item.href;
+                  const isActive =
+                    currentPath === item.href ||
+                    currentPath.startsWith(`${item.href}/`);
                   const isHovered = hoveredDropdown === item.label;
 
                   return (
@@ -67,32 +104,22 @@ const Navigation = () => {
                       onMouseLeave={handleMouseLeave}
                       className="relative py-8"
                     >
-                      {/* Store & Project are now <span> instead of <a> to prevent clicking */}
-                      {item.hasDropdown ? (
-                        <span
-                          className={`flex items-center gap-1 text-sm font-semibold cursor-pointer transition-colors
-                          ${isHovered ? "text-[#FFAA14]" : "text-gray-400 hover:text-[#ffaa14]"}
+                      <a
+                        href={item.href}
+                        onClick={handleLinkClick}
+                        className={`flex items-center gap-1 text-sm font-semibold transition-colors
+                          ${isActive || isHovered ? "text-[#FFAA14]" : "text-gray-400 hover:text-[#ffaa14]"}
                         `}
-                        >
-                          {item.label}
+                      >
+                        {item.label}
+                        {item.hasDropdown && (
                           <span
                             className={`text-[10px] ml-1 transition-transform ${isHovered ? "rotate-180" : ""}`}
                           >
                             {isHovered ? "▲" : "▼"}
                           </span>
-                        </span>
-                      ) : (
-                        <a
-                          href={item.href}
-                          className={`flex items-center gap-1 text-sm font-semibold transition-colors
-                            ${isActive ? "text-[#FFAA14]" : "text-gray-400 hover:text-[#ffaa14]"}
-                          `}
-                        >
-                          {item.label}
-                        </a>
-                      )}
-
-                      {/* Active Indicator Arrow */}
+                        )}
+                      </a>
                       {isActive && (
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[#FFAA14] text-[10px]">
                           ▲
@@ -103,61 +130,47 @@ const Navigation = () => {
                 })}
               </ul>
 
-              {/* Auth Buttons */}
               <div className="hidden lg:flex items-center gap-3">
-                <a
-                  href="/login"
-                  className="text-sm font-bold px-5 py-2 border border-gray-100 rounded-md hover:bg-gray-50"
+                <button
+                  onClick={() => openAuth("login")}
+                  className="text-sm font-bold px-5 py-2 border border-gray-100 rounded-md hover:bg-gray-50 transition-colors"
                 >
                   Log In
-                </a>
-                <a
-                  href="/signup"
-                  className="text-sm font-bold text-white bg-[#FFAA14] px-5 py-2 rounded-md hover:bg-[#e59912]"
+                </button>
+                <button
+                  onClick={() => openAuth("signup")}
+                  className="text-sm font-bold text-white bg-[#FFAA14] px-5 py-2 rounded-md hover:bg-[#e59912] transition-colors"
                 >
                   Sign Up
-                </a>
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Mega Menu Content */}
           <div
             className={`absolute top-full left-0 w-full bg-[#F9F9F9] border-b border-gray-200 shadow-xl transition-all duration-300 ease-out overflow-hidden ${
               hoveredDropdown
-                ? "max-h-[600px] opacity-100"
-                : "max-h-0 opacity-0"
+                ? "max-h-[85vh] opacity-100 visible"
+                : "max-h-0 opacity-0 invisible"
             }`}
             onMouseEnter={() => handleMouseEnter(hoveredDropdown)}
             onMouseLeave={handleMouseLeave}
           >
-            <div className="container mx-auto px-12 py-16">
+            <div className="container mx-auto px-12 py-16 overflow-y-auto">
               {/* STORE DROPDOWN */}
               {hoveredDropdown === "Store" && (
                 <div className="flex gap-20">
                   <div className="w-1/4 border-r border-gray-200 pr-12">
-                    <h4 className="text-gray-900 font-bold mb-8">
-                      Our Packages
-                    </h4>
+                    <h4 className="text-gray  font-bold mb-8">Our Packages</h4>
                     <ul className="space-y-6">
-                      <li>
-                        <a
-                          href="/store/home"
-                          className="flex justify-between items-center text-gray-500 hover:text-[#ffaa14] font-medium group"
-                        >
-                          Wiibi Home{" "}
-                          <span className="opacity-0 group-hover:opacity-100 transition-all">
-                            ↗
-                          </span>
-                        </a>
-                      </li>
-                      {["Wiibi Business", "Wiibi Reserved"].map((pkg) => (
+                      {["Home", "Business", "Reserved"].map((pkg) => (
                         <li key={pkg}>
                           <a
-                            href="#"
-                            className="flex justify-between items-center text-gray-500 font-medium hover:text-[#ffaa14] group"
+                            href={`/store#${pkg.toLowerCase()}`}
+                            onClick={handleLinkClick}
+                            className="flex justify-between items-center text-gray-500 hover:text-[#ffaa14] font-medium group"
                           >
-                            {pkg}{" "}
+                            Wiibi {pkg}{" "}
                             <span className="opacity-0 group-hover:opacity-100 transition-all">
                               ↗
                             </span>
@@ -167,9 +180,7 @@ const Navigation = () => {
                     </ul>
                   </div>
                   <div className="w-1/4">
-                    <h4 className="text-gray-900 font-bold mb-8">
-                      All Products
-                    </h4>
+                    <h4 className="text-gray  font-bold mb-8">All Products</h4>
                     <ul className="space-y-6">
                       {[
                         "Solar",
@@ -181,7 +192,8 @@ const Navigation = () => {
                       ].map((prod) => (
                         <li key={prod}>
                           <a
-                            href="#"
+                            href={`/store#${prod.toLowerCase().replace(/\s+/g, "-")}`}
+                            onClick={handleLinkClick}
                             className="flex justify-between items-center text-gray-500 font-medium hover:text-[#ffaa14] group"
                           >
                             {prod}{" "}
@@ -195,20 +207,24 @@ const Navigation = () => {
                   </div>
                 </div>
               )}
-              {/* PROJECTS DROPDOWN */}
+
+              {/* PROJECTS DROPDOWN - RESTORED STYLING */}
               {hoveredDropdown === "Projects" && (
                 <div className="flex gap-16">
                   {/* Left: Our Services Box */}
-                  <div className="w-1/4 border-r border-gray-200  pl-4  pr-12">
-                    <h4 className="text-gray-900 font-bold mb-8">
-                      Our Services
-                    </h4>
-                    <div className="  rounded-lg border-[1px] p-4 border-[#f2f2f2] mb-8">
+
+                  <div className="w-1/4 border-r border-gray-200 pl-4 pr-12">
+                    <h4 className="text-gray  font-bold mb-8">Our Services</h4>
+
+                    <div className=" rounded-lg border-[1px] p-4 border-[#f2f2f2] mb-8">
                       <ul className="space-y-5 text-sm font-medium text-gray-500">
                         {[
                           "Site Inspection and checklist",
+
                           "Personalized design systems",
+
                           "Professional Installation",
+
                           "Systems and Commissioning",
                         ].map((s) => (
                           <li
@@ -220,6 +236,7 @@ const Navigation = () => {
                         ))}
                       </ul>
                     </div>
+
                     <div className="flex items-center gap-6">
                       <a
                         href="/quote"
@@ -227,6 +244,7 @@ const Navigation = () => {
                       >
                         Request Free Quote <span>↗</span>
                       </a>
+
                       <a
                         href="/services"
                         className="text-gray-400 text-xs font-bold border-b border-gray-300 pb-0.5 hover:text-[#ffaa14] transition flex items-center gap-1"
@@ -238,23 +256,24 @@ const Navigation = () => {
 
                   {/* Right: Business/Residential Grid */}
                   <div className="flex-1">
-                    <h4 className="text-gray-900 font-bold mb-8">
+                    <h4 className="text-gray  font-bold mb-8">
                       Projects and Case Studies
                     </h4>
                     <div className="grid grid-cols-2 gap-20">
                       <div>
-                        <span className="text-[16px] text-[#1a1102] font-bold text-gray-900 uppercase tracking-widest block mb-8">
+                        <span className="text-[16px] text-[#1a1102] font-bold uppercase tracking-widest block mb-8">
                           For Business
                         </span>
                         <div className="space-y-10">
                           {[
-                            { n: "Joes Bar", y: "2023" },
-                            { n: "Admor Links", y: "2025" },
+                            { n: "Joes Bar", id: "joes-bar", y: "2023" },
+                            { n: "Admor Links", id: "admor-links", y: "2025" },
                           ].map((p) => (
                             <a
                               key={p.n}
-                              href="#"
-                              className="flex justify-between items-end group border-transparent"
+                              href={`/projects#${p.id}`}
+                              onClick={handleLinkClick}
+                              className="flex justify-between items-end group"
                             >
                               <div>
                                 <p className="font-bold text-gray-600 group-hover:text-[#ffaa14] transition-colors">
@@ -272,11 +291,12 @@ const Navigation = () => {
                         </div>
                       </div>
                       <div>
-                        <span className="text-[16px] text-[#1a1102] font-bold text-gray-900 uppercase tracking-widest block mb-8">
+                        <span className="text-[16px] text-[#1a1102] font-bold uppercase tracking-widest block mb-8">
                           Residential
                         </span>
                         <a
-                          href="#"
+                          href="/projects#joseph-residence"
+                          onClick={handleLinkClick}
                           className="flex justify-between items-end group"
                         >
                           <div>

@@ -37,13 +37,14 @@ const ABOUT_MAIN_CONTENT = {
       main_image:   "media-environmental-care",
       bg_color:     "#F9FFF2",
     },
-    {
+
+  ],
+  staff_header:{
       main_heading: "Our Leadership",
       sub_headings: ["Visionaries", "Focused"],
       support_text: "By replacing fossil-fuel-based power sources, our installations measurably reduce greenhouse gas emissions.",
       main_image:   "media-leadership-team",
-    },
-  ],
+  },
   staff_grid: [
     { name: "Staff Name", role: "Staff Role", image: "media-staff-1" },
     { name: "Staff Name", role: "Staff Role", image: "media-staff-2" },

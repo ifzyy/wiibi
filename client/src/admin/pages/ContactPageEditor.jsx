@@ -1,86 +1,141 @@
-import React, { useEffect, useState } from 'react';
-import { api } from '../utils/api.js';
-import { ChevronRight, ChevronLeft, Plus, MapPin } from 'lucide-react';
-import { toast } from 'react-toastify';
+import React, { useEffect, useState, useRef } from "react";
+import { api } from "../utils/api.js";
+import { ChevronRight, Plus, MapPin } from "lucide-react";
+import { toast } from "react-toastify";
 
 const ContactPageEditor = ({ token, onHasChanges, onSaveRef }) => {
-  const [pageData, setPageData] = useState(null);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [originalData, setOriginalData] = useState(null);
-// 1. On Fetch: Store both current and a backup for comparison
-  useEffect(() => {
-    const load = async () => {
-      const res = await api.get('/admin/pages/page-contact',{
-        headers:{
-            Authorization: `Bearer ${token}`
-        }
-      });
-      setData(res.data);
-      setOriginalData(JSON.stringify(res.data)); // The reference point
-    };
-    load();
-  }, []);
+  const originalRef = useRef(null);
+  const pageId = "page-contact";
 
-  // 2. The Save Function: What handleSave() in Dashboard triggers
+  // 1. DATA FETCHING
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      onHasChanges(false);
+      try {
+        const res = await api.get(`/admin/pages/${pageId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const secs = res.data.PageSections || res.data.sections || [];
+        const sortedSecs = [...secs].sort((a, b) => a.order - b.order);
+
+        setSections(sortedSecs);
+        originalRef.current = JSON.stringify(sortedSecs);
+      } catch (err) {
+        console.error("Fetch error:", err);
+        toast.error("Failed to load Contact page content.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (token) fetchData();
+  }, [token]);
+
+  // 2. SAVE LOGIC
   const handleSave = async () => {
     try {
-      // Loop sections and PUT to API
-      await api.put('/admin/sections/...', data); 
-      
-      // Sync the originalData so the "Has Changes" dot goes away
-      setOriginalData(JSON.stringify(data));
-      onHasChanges(false); 
-      toast.success("Live site updated!");
-    } catch (err) { toast.error("Save failed"); }
+      await Promise.all(
+        sections.map((sec) =>
+          api.put(
+            `/admin/sections/${sec.id}`,
+            { content: sec.content, is_visible: sec.is_visible },
+            { headers: { Authorization: `Bearer ${token}` } },
+          ),
+        ),
+      );
+
+      originalRef.current = JSON.stringify(sections);
+      onHasChanges(false);
+      toast.success("🚀 Contact page pushed live!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Save failed.");
+    }
   };
 
-  // 3. The "Useful Thing": Attach handleSave to the Dashboard's Ref
-  // This is how the TopBar button actually finds this function
   useEffect(() => {
     if (onSaveRef) onSaveRef.current = handleSave;
-  }, [data]); // Re-bind whenever data changes
+  }, [sections]);
 
-  // 4. The Change Tracker
-  const updateContent = (newContent) => {
-    setData(newContent);
-    // If current data is different from backup, light up the yellow dot
-    const isDirty = JSON.stringify(newContent) !== originalData;
-    onHasChanges(isDirty);
+  // 3. UNIVERSAL UPDATER
+  const update = (type, path, value) => {
+    setSections((prev) => {
+      const updated = prev.map((s) => {
+        if (s.section_type === type || s.type === type) {
+          const newContent = JSON.parse(JSON.stringify(s.content));
+          const keys = path.split(".");
+          let current = newContent;
+
+          for (let i = 0; i < keys.length - 1; i++) {
+            current = current[keys[i]];
+          }
+          current[keys[keys.length - 1]] = value;
+          return { ...s, content: newContent };
+        }
+        return s;
+      });
+
+      const hasChanged = JSON.stringify(updated) !== originalRef.current;
+      onHasChanges(hasChanged);
+      return updated;
+    });
   };
 
-  if (loading) return <div className="p-20 text-center font-black italic text-stone-400">Opening Contact Studio...</div>;
+  // Helper to get section
+  const getSection = (type) =>
+    sections.find((s) => s.section_type === type || s.type === type) || {
+      content: {
+        header: {},
+        visit_info: { map_data: {} },
+        connect_info: { contact_methods: [] },
+      },
+    };
 
-  const section = pageData.sections.find(s => s.type === 'main');
-  const { header, visit_info, connect_info } = section.content;
+  if (loading)
+    return (
+      <div className="p-20 text-center font-black italic text-[#FFAA14 ] -400 uppercase tracking-widest">
+        Opening Contact Studio...
+      </div>
+    );
+
+  const main = getSection("main");
+  const { header, visit_info, connect_info } = main.content;
 
   return (
     <main className="bg-white min-h-screen pb-32">
       {/* 1. HEADER SECTION */}
-      <header className="max-w-7xl mx-auto px-6 pt-16 pb-12 border-b border-stone-100">
-        <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-stone-400 mb-6">
-          <span>Home</span>
-          <ChevronRight size={10} strokeWidth={3} />
+      <header className="max-w-7xl mx-auto px-6 pt-16 pb-12 border-b  border-stone-50 -100">
+        <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#FFAA14 ] -400 mb-6">
+          <span>Home</span> <ChevronRight size={10} />
           <span className="text-amber-500">Contact</span>
         </nav>
-        
-        <input 
-          value={header.sub_heading}
-          onChange={(e) => update('header.sub_heading', e.target.value)}
+
+        <input
+          value={header.sub_heading || ""}
+          onChange={(e) => update("main", "header.sub_heading", e.target.value)}
           className="text-amber-500 font-bold text-[11px] uppercase tracking-[0.3em] block mb-3 bg-transparent hover:bg-amber-50 outline-none w-full"
         />
-        <input 
-          value={header.main_heading}
-          onChange={(e) => update('header.main_heading', e.target.value)}
-          className="text-4xl md:text-5xl font-black text-stone-900 tracking-tight bg-transparent hover:bg-stone-50 outline-none w-full"
+        <input
+          value={header.main_heading || ""}
+          onChange={(e) =>
+            update("main", "header.main_heading", e.target.value)
+          }
+          className="text-4xl md:text-5xl font-black text-[#FFAA14 ]   tracking-tight bg-transparent hover:bg-[#FFAA14 ] -50 outline-none w-full"
         />
       </header>
 
       {/* 2. CONNECT & VISIT SECTION */}
       <section className="max-w-7xl mx-auto px-6 py-20">
-        <textarea 
-          value={header.display_title}
-          onChange={(e) => update('header.display_title', e.target.value)}
-          className="text-4xl font-black text-stone-900 mb-16 tracking-tight bg-transparent hover:bg-stone-50 outline-none w-full resize-none overflow-hidden"
+        <textarea
+          value={header.display_title || ""}
+          onChange={(e) =>
+            update("main", "header.display_title", e.target.value)
+          }
+          className="text-4xl font-black text-[#FFAA14 ]   mb-16 tracking-tight bg-transparent hover:bg-[#FFAA14 ] -50 outline-none w-full resize-none overflow-hidden"
           rows={1}
         />
 
@@ -88,34 +143,47 @@ const ContactPageEditor = ({ token, onHasChanges, onSaveRef }) => {
           {/* Left: Connect Info */}
           <div className="lg:col-span-3 space-y-10">
             <div>
-              <input 
-                value={connect_info.section_title}
-                onChange={(e) => update('connect_info.section_title', e.target.value)}
-                className="text-xl font-black text-stone-900 mb-6 bg-transparent hover:bg-stone-50 outline-none w-full"
+              <input
+                value={connect_info.section_title || ""}
+                onChange={(e) =>
+                  update("main", "connect_info.section_title", e.target.value)
+                }
+                className="text-xl font-black text-[#FFAA14 ]   mb-6 bg-transparent outline-none w-full"
               />
-              
-              {connect_info.contact_methods.map((method, i) => (
-                <div key={i} className="mb-8 last:mb-0">
-                  <input 
-                    value={method.label}
+
+              {connect_info.contact_methods?.map((method, i) => (
+                <div
+                  key={i}
+                  className="mb-8 last:mb-0 border-l-2  border-stone-50 -50 pl-4"
+                >
+                  <input
+                    value={method.label || ""}
                     onChange={(e) => {
-                        const newMethods = [...connect_info.contact_methods];
-                        newMethods[i].label = e.target.value;
-                        update('connect_info.contact_methods', newMethods);
+                      const newMethods = [...connect_info.contact_methods];
+                      newMethods[i].label = e.target.value;
+                      update(
+                        "main",
+                        "connect_info.contact_methods",
+                        newMethods,
+                      );
                     }}
-                    className="text-amber-500 text-[11px] font-black uppercase tracking-widest bg-transparent outline-none w-full mb-4"
+                    className="text-amber-500 text-[11px] font-black uppercase tracking-widest bg-transparent outline-none w-full mb-2"
                   />
-                  <div className="space-y-2">
-                    {method.values.map((val, idx) => (
-                      <input 
+                  <div className="space-y-1">
+                    {method.values?.map((val, idx) => (
+                      <input
                         key={idx}
-                        value={val}
+                        value={val || ""}
                         onChange={(e) => {
-                            const newMethods = [...connect_info.contact_methods];
-                            newMethods[i].values[idx] = e.target.value;
-                            update('connect_info.contact_methods', newMethods);
+                          const newMethods = [...connect_info.contact_methods];
+                          newMethods[i].values[idx] = e.target.value;
+                          update(
+                            "main",
+                            "connect_info.contact_methods",
+                            newMethods,
+                          );
                         }}
-                        className="text-stone-900 font-black text-sm block bg-transparent hover:bg-stone-50 outline-none w-full"
+                        className="text-[#FFAA14 ]   font-black text-sm block bg-transparent hover:bg-[#FFAA14 ] -50 outline-none w-full"
                       />
                     ))}
                   </div>
@@ -126,63 +194,81 @@ const ContactPageEditor = ({ token, onHasChanges, onSaveRef }) => {
 
           {/* Right: Visit Info & Map */}
           <div className="lg:col-span-9">
-            <input 
-                value={visit_info.section_title}
-                onChange={(e) => update('visit_info.section_title', e.target.value)}
-                className="text-xl font-black text-stone-900 mb-4 bg-transparent outline-none w-full"
+            <input
+              value={visit_info.section_title || ""}
+              onChange={(e) =>
+                update("main", "visit_info.section_title", e.target.value)
+              }
+              className="text-xl font-black text-[#FFAA14 ]   mb-2 bg-transparent outline-none w-full"
             />
-            <input 
-                value={visit_info.address}
-                onChange={(e) => update('visit_info.address', e.target.value)}
-                className="text-stone-400 text-xs font-black uppercase tracking-widest mb-8 bg-transparent outline-none w-full"
+            <input
+              value={visit_info.address || ""}
+              onChange={(e) =>
+                update("main", "visit_info.address", e.target.value)
+              }
+              className="text-[#FFAA14 ] -400 text-xs font-black uppercase tracking-widest mb-8 bg-transparent outline-none w-full"
             />
-            
-            {/* Map Editor UI */}
-            <div className="w-full aspect-video bg-stone-50 rounded-[2.5rem] border border-stone-100 overflow-hidden relative group">
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-100/50">
-                    <MapPin size={40} className="text-stone-200 mb-4" />
-                    <div className="text-stone-300 font-black text-xs uppercase tracking-widest">
-                        Map Media ID: 
-                    </div>
-                    <input 
-                        value={visit_info.map_data.main_image}
-                        onChange={(e) => update('visit_info.map_data.main_image', e.target.value)}
-                        className="bg-white border border-stone-200 px-3 py-1 rounded mt-2 text-xs font-mono outline-none"
-                    />
-                </div>
-                
-                {/* Simulated Map Marker Overlay */}
-                <div className="absolute bottom-10 left-10 bg-white p-4 rounded-2xl shadow-xl border border-stone-50 z-10">
-                    <p className="text-[10px] font-black uppercase text-stone-400 mb-1">Center</p>
-                    <input 
-                        value={visit_info.map_data.center_location}
-                        onChange={(e) => update('visit_info.map_data.center_location', e.target.value)}
-                        className="text-sm font-black text-stone-900 bg-transparent outline-none"
-                    />
-                </div>
+
+            <div className="w-full aspect-video bg-[#FFAA14 ] -50 rounded-[2.5rem] border  border-stone-50 -100 overflow-hidden relative group">
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <MapPin size={40} className="text-[#FFAA14 ] -200 mb-4" />
+                <span className="text-[#FFAA14 ] -300 font-black text-[10px] uppercase tracking-widest">
+                  Map Asset ID
+                </span>
+                <input
+                  value={visit_info.map_data?.main_image || ""}
+                  onChange={(e) =>
+                    update(
+                      "main",
+                      "visit_info.map_data.main_image",
+                      e.target.value,
+                    )
+                  }
+                  className="bg-white border  border-stone-50 -200 px-3 py-1 rounded mt-2 text-xs font-mono outline-none text-center"
+                />
+              </div>
+
+              <div className="absolute bottom-10 left-10 bg-white p-4 rounded-2xl shadow-xl border  border-stone-50 -50">
+                <p className="text-[10px] font-black uppercase text-[#FFAA14 ] -400 mb-1">
+                  Marker Location Name
+                </p>
+                <input
+                  value={visit_info.map_data?.center_location || ""}
+                  onChange={(e) =>
+                    update(
+                      "main",
+                      "visit_info.map_data.center_location",
+                      e.target.value,
+                    )
+                  }
+                  className="text-sm font-black text-[#FFAA14 ]   bg-transparent outline-none w-full"
+                />
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 3. FAQ SECTION (Preview) */}
-      <section className="max-w-7xl mx-auto px-6 py-32 border-t border-stone-100">
+      {/* 3. FAQ SECTION (Static Preview) */}
+      <section className="max-w-7xl mx-auto px-6 py-32 border-t  border-stone-50 -100">
         <div className="grid lg:grid-cols-2 gap-20">
           <div>
             <span className="text-amber-500 font-bold text-[11px] uppercase tracking-[0.3em] block mb-4">
-              Frequently asked questions
+              FAQ Preview
             </span>
-            <h2 className="text-5xl font-black text-stone-900 tracking-tighter leading-tight">
-              Manage FAQs in <br /> Settings Tab
+            <h2 className="text-5xl font-black text-[#FFAA14 ]   tracking-tighter leading-tight">
+              Global FAQ <br /> Management
             </h2>
-            <p className="text-stone-400 mt-6 max-w-sm">FAQ content is shared across pages and can be edited globally to maintain consistency.</p>
+            <p className="text-[#FFAA14 ] -400 mt-6 max-w-sm">
+              Edit these in the "Settings" tab to update all pages
+              simultaneously.
+            </p>
           </div>
-
-          <div className="divide-y divide-stone-100 opacity-40 grayscale pointer-events-none">
-            {["Question 1", "Question 2", "Question 3"].map((q, i) => (
+          <div className="divide-y divide-[#FFAA14 ] -100 opacity-30 select-none">
+            {[1, 2, 3].map((i) => (
               <div key={i} className="py-8 flex items-center justify-between">
-                <p className="text-lg font-bold text-stone-800">{q}</p>
-                <Plus size={20} className="text-stone-300" />
+                <div className="h-4 w-48 bg-[#FFAA14 ] -200 rounded" />
+                <Plus size={20} className="text-[#FFAA14 ] -300" />
               </div>
             ))}
           </div>

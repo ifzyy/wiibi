@@ -89,10 +89,8 @@ function HomePage() {
                   <button className="bg-[#1A1102] px-8 py-4 text-white font-bold rounded-md hover:bg-black transition-colors">
                     View our packages
                   </button>
-            
                 </div>
-<img src={heroFlower} className="w-8 h-8" />
-
+                <img src={heroFlower} className="w-8 h-8" />
 
                 <p className="font-light text-[#606060] text-[17px] max-w-[260px]">
                   {hero.content.second_support_text}
@@ -152,7 +150,7 @@ function HomePage() {
             {/* Center side: Amount Display */}
             <div className="flex-1 p-8 lg:p-12 flex items-center justify-between bg-white relative">
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-gray-900 mb-2">
+                <span className="text-sm font-bold text-gray  mb-2">
                   Solar Calculator
                 </span>
                 <h4 className="text-4xl lg:text-5xl font-bold">₦125,000</h4>
@@ -199,7 +197,7 @@ function HomePage() {
               <span className="text-[#FFAA14] text-sm font-semibold uppercase tracking-wide mb-4">
                 {stats.content.title}
               </span>
-              <h2 className="text-4xl font-bold text-gray-900 mb-6">
+              <h2 className="text-4xl font-bold text-gray  mb-6">
                 {stats.content.heading}
               </h2>
               <p className="text-gray-600 leading-relaxed mb-8">
@@ -248,7 +246,7 @@ function HomePage() {
                     </span>
                   </div>
 
-                  <p className="text-lg font-semibold text-gray-900 mb-4 capitalize">
+                  <p className="text-lg font-semibold text-gray  mb-4 capitalize">
                     {stat.label}
                   </p>
                   <p className="text-gray-600 leading-snug max-w-sm">
@@ -270,7 +268,7 @@ function HomePage() {
               <span className="text-[#FFAA14] text-sm font-semibold uppercase tracking-wide mb-2">
                 {blogTeaser.content.title}
               </span>
-              <h2 className="text-4xl font-bold text-gray-900 mb-6">
+              <h2 className="text-4xl font-bold text-gray  mb-6">
                 {blogTeaser.content.heading}
               </h2>
               <p className="text-gray-600 leading-relaxed mb-8">
@@ -370,7 +368,7 @@ function HomePage() {
               <span className="text-[#FFAA14] text-sm font-semibold uppercase tracking-wide mb-4">
                 {faqTeaser.content.title}
               </span>
-              <h2 className="text-4xl font-bold text-gray-900 mb-6 leading-tight">
+              <h2 className="text-4xl font-bold text-gray  mb-6 leading-tight">
                 {faqTeaser.content.heading}
               </h2>
               <p className="text-gray-500 mb-8 font-medium">
@@ -378,7 +376,7 @@ function HomePage() {
               </p>
 
               <div className="flex flex-wrap items-center gap-6">
-                <button className="bg-white border border-gray-200 text-gray-900 px-5 py-2.5 rounded-md font-semibold text-sm shadow-sm hover:bg-gray-50 transition">
+                <button className="bg-white border border-gray-200 text-gray  px-5 py-2.5 rounded-md font-semibold text-sm shadow-sm hover:bg-gray-50 transition">
                   Request a quote
                 </button>
                 <a
@@ -427,7 +425,7 @@ function HomePage() {
               <div className="p-8 lg:p-12 flex items-center justify-between border-t border-gray-200">
                 {/* Pagination Dots */}
                 <div className="flex gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-gray-900"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray "></span>
                   <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
                   <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
                 </div>
@@ -495,7 +493,7 @@ function HomePage() {
                 <h2 className="text-4xl md:text-5xl font-medium text-gray-500 mb-2">
                   {cta.content.heading_one}
                 </h2>
-                <h2 className="text-4xl md:text-5xl font-bold text-gray-900">
+                <h2 className="text-4xl md:text-5xl font-bold text-gray ">
                   {cta.content.heading_two}
                 </h2>
               </div>

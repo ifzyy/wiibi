@@ -3,7 +3,6 @@ import { setAuthToken, PAGES } from "./utils/api.js";
 import { LoginScreen } from "./pages/Login.jsx";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { TopBar } from "./components/TopBar.jsx";
-import { PageEditor } from "./pages/PageEditor.jsx";
 import ProductCatalogPage from "./pages/ProductCatalog.jsx";
 import { BlogManagerPage } from "./pages/BlogManager.jsx";
 import { SettingsPage } from "./pages/Settings.jsx";
@@ -12,6 +11,9 @@ import "react-toastify/dist/ReactToastify.css";
 import HomePageEditor from "./pages/HomepageEditor.jsx";
 import ContactPageEditor from "./pages/ContactPageEditor.jsx";
 import AboutPageEditor from "./pages/AboutPageEditor.jsx";
+import ProjectsManager from "./pages/ProjectsManager.jsx";
+import FAQsManager from "./pages/FAQsManager.jsx";
+
 export default function AdminDashboard() {
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
   const [activeNav, setActiveNav] = useState("pages");
@@ -57,15 +59,15 @@ export default function AdminDashboard() {
 
   return (
     <div
-      className=" flex bg-stone-50 overflow-hidden"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
+      className="h-screen flex bg-slate-50 overflow-hidden"
+      style={{ fontFamily: "'Inter', 'DM Sans', sans-serif" }}
     >
       <link
-        href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800;9..40,900&family=Instrument+Serif:ital@0;1&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800;9..40,900&display=swap"
         rel="stylesheet"
       />
 
-      {/* Sidebar */}
+      {/* Sidebar - Fixed, full height */}
       <Sidebar
         activeNav={activeNav}
         setActiveNav={setActiveNav}
@@ -76,8 +78,9 @@ export default function AdminDashboard() {
         onPreview={handlePreview}
       />
 
-      {/* Main content area */}
+      {/* Main content area - Fixed container with scrollable content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* TopBar - Fixed */}
         <TopBar
           activeNav={activeNav}
           activePageId={activePageId}
@@ -87,36 +90,57 @@ export default function AdminDashboard() {
           onPreview={handlePreview}
         />
 
-        <main className="flex-1 ">
-          {activeNav === "pages" && (
-            <>
-              {activePageId === "page-home" && (
-                <HomePageEditor
-                  onHasChanges={handleHasChanges}
-                  onSaveRef={saveRef}
-                  token={token}
-                />
-              )}
-              {activePageId === "page-about" && (
-                <AboutPageEditor
-                  onHasChanges={handleHasChanges}
-                  onSaveRef={saveRef}
-                  token={token}
-                />
-              )}
-              {activePageId === "page-contact" && (
-                <ContactPageEditor
-                  onHasChanges={handleHasChanges}
-                  onSaveRef={saveRef}
-                  token={token}
-                />
-              )}
-            </>
-          )}
-          {activeNav === "products" && <ProductCatalogPage token={token} />}
-          {activeNav === "about" && <AboutPage />}
-          {activeNav === "blog" && <BlogManagerPage />}
-          {activeNav === "settings" && <SettingsPage />}
+        {/* Main scrollable content */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50">
+          <div className="max-w-[1600px] mx-auto p-8">
+            {activeNav === "pages" && (
+              <>
+                {activePageId === "page-home" && (
+                  <HomePageEditor
+                    onHasChanges={handleHasChanges}
+                    onSaveRef={saveRef}
+                    token={token}
+                    key="home"
+                  />
+                )}
+                {activePageId === "page-about" && (
+                  <AboutPageEditor
+                    onHasChanges={handleHasChanges}
+                    onSaveRef={saveRef}
+                    token={token}
+                    key="about"
+                  />
+                )}
+                {activePageId === "page-contact" && (
+                  <ContactPageEditor
+                    onHasChanges={handleHasChanges}
+                    onSaveRef={saveRef}
+                    token={token}
+                    key="contact"
+                  />
+                )}
+              </>
+            )}
+            {activeNav === "products" && <ProductCatalogPage token={token} />}
+            {activeNav === "projects" && (
+              <ProjectsManager
+                activePageId={activePageId}
+                onHasChanges={handleHasChanges}
+                onSaveRef={saveRef}
+                token={token}
+              />
+            )}
+            {activeNav === "faqs" && (
+              <FAQsManager
+                activePageId={activePageId}
+                onHasChanges={handleHasChanges}
+                onSaveRef={saveRef}
+                token={token}
+              />
+            )}
+            {activeNav === "blog" && <BlogManagerPage />}
+            {activeNav === "settings" && <SettingsPage />}
+          </div>
         </main>
       </div>
 
@@ -124,12 +148,12 @@ export default function AdminDashboard() {
         position="bottom-right"
         autoClose={3000}
         toastStyle={{
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: "'Inter', sans-serif",
           fontSize: "13px",
           fontWeight: 600,
-          borderRadius: "14px",
-          border: "1px solid #e7e5e4",
-          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
+          borderRadius: "16px",
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
         }}
         closeButton={false}
       />

@@ -55,7 +55,14 @@ const TestimonialCarousel = ({ testimonials }) => {
             onClick={() => emblaApi && emblaApi.scrollPrev()}
             className="absolute left-[-60px] top-1/2 -translate-y-1/2 hidden md:flex w-10 h-10 rounded-full border border-gray-200 items-center justify-center hover:bg-gray-50 transition shadow-sm"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
@@ -64,7 +71,14 @@ const TestimonialCarousel = ({ testimonials }) => {
             onClick={() => emblaApi && emblaApi.scrollNext()}
             className="absolute right-[-60px] top-1/2 -translate-y-1/2 hidden md:flex w-10 h-10 rounded-full border border-gray-200 items-center justify-center hover:bg-gray-50 transition shadow-sm"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
@@ -75,33 +89,35 @@ const TestimonialCarousel = ({ testimonials }) => {
               {testimonials.content.testimonials?.map((t, i) => {
                 const isActive = i === selectedIndex;
                 return (
-                  <div 
-                    key={i} 
+                  <div
+                    key={i}
                     className="flex-[0_0_100%] min-w-0 px-4 transition-opacity duration-500"
                     style={{ opacity: isActive ? 1 : 0.3 }}
                   >
                     {/* Placeholder for the grey image box in screenshot */}
                     <div className="bg-[#F9FAFB] aspect-video w-full rounded-sm mb-6 flex items-center justify-center overflow-hidden">
-                       {t.image_url ? (
-                         <img src={t.image_url} alt={t.name} className="w-full h-full object-cover" />
-                       ) : (
-                         <div className="w-full h-full bg-gray-100" />
-                       )}
+                      {t.image_url ? (
+                        <img
+                          src={t.image_url}
+                          alt={t.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-100" />
+                      )}
                     </div>
 
                     {/* Metadata Row */}
                     <div className="flex justify-between items-center mb-2">
-                      <h4 className="text-xl font-bold text-gray-900">
+                      <h4 className="text-xl font-bold text-gray ">
                         {/* Using static names to match screenshot style or t.name */}
                         {t.name === "Aisha O." ? "Jose Bar & Lounge" : t.name}
                       </h4>
-                      <span className="text-gray-900 font-bold text-lg">2025</span>
+                      <span className="text-gray  font-bold text-lg">2025</span>
                     </div>
 
                     {/* Quote Text */}
-                    <p className="text-gray-600 text-lg mb-6">
-                      {t.text}
-                    </p>
+                    <p className="text-gray-600 text-lg mb-6">{t.text}</p>
 
                     {/* Action Link */}
                     <div className="border-b border-gray-300 inline-block pb-0.5">
@@ -110,7 +126,14 @@ const TestimonialCarousel = ({ testimonials }) => {
                         className="flex items-center gap-2 text-gray-700 font-medium hover:text-black transition-colors text-sm"
                       >
                         {t.button_text}
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                        >
                           <path d="M7 17l10-10M7 7h10v10" />
                         </svg>
                       </a>

@@ -17,7 +17,7 @@ export const setAuthToken = (token) => {
 export const PAGES = [
   { id: 'page-home',    label: 'Homepage', slug: 'home',    icon: 'home',  color: '#f59e0b' },
   { id: 'page-store',   label: 'Store',    slug: 'store',   icon: 'store', color: '#10b981' },
-  { id: 'about',   label: 'About',    slug: 'about',   icon: 'users', color: '#6366f1' },
+  { id: 'page-about',   label: 'About',    slug: 'about',   icon: 'users', color: '#6366f1' },
   { id: 'page-contact', label: 'Contact',  slug: 'contact', icon: 'file',  color: '#ec4899' },
   { id: 'page-blog',    label: 'Blog',     slug: 'blog',    icon: 'blog',  color: '#0ea5e9' },
   { id: 'page-faq',     label: 'FAQ',      slug: 'faq',     icon: 'zap',   color: '#8b5cf6' },
