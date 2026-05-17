@@ -104,21 +104,18 @@ export default (sequelize, DataTypes) => {
   });
 
 Project.associate = (models) => {
-    // Featured image (single)
-    Project.belongsTo(models.Media, {
-      foreignKey: 'featured_image_id',
-      as: 'featuredImage',
+    Project.belongsToMany(models.Media, {
+      through: models.ProjectMedia,
+      foreignKey: 'project_id',
+      otherKey: 'media_id',
+      as: 'galleryImages',
+      constraints: false,
     });
 
-    // Gallery images (multiple) – using polymorphic relation in Media
-    Project.hasMany(models.Media, {
-      foreignKey: 'entity_id',
-      constraints: false,
-      scope: {
-        entity_type: 'project',
-        is_featured: false, // optional filter if you want to separate featured
-      },
-      as: 'galleryImages',
+    Project.hasMany(models.ProjectMedia, {
+      foreignKey: 'project_id',
+      as: 'mediaRelations',
+      onDelete: 'CASCADE',
     });
   };
 

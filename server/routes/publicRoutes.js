@@ -1,4 +1,4 @@
-import express from "express";
+import express from 'express';
 import {
   getHomepage,
   getPageBySlug,
@@ -7,23 +7,16 @@ import {
   getPublicFaqs,
   getProjectBySlug,
   getPublicProjects,
-} from "../controllers/publicController.js";
+} from '../controllers/publicController.js';
 
 const router = express.Router();
 
-router.get("/homepage", getHomepage);
-router.get("/pages/:slug", getPageBySlug);
-
-// Public routes – no auth
-router.get("/products", getPublicProducts);
-router.get("/products/:slug", getProductBySlug);
-
-router.get("/faqs",getPublicFaqs)
-
-
-// Public routes (no auth)
-router.get('/', getPublicProjects);
-router.get('/:slug', getProjectBySlug);
-
+router.get('/homepage',        getHomepage);
+router.get('/pages/:slug',     getPageBySlug);
+router.get('/products',        getPublicProducts);
+router.get('/products/:slug',  getProductBySlug);
+router.get('/faqs',            getPublicFaqs);
+router.get('/projects',        getPublicProjects);
+router.get('/projects/:slug',  getProjectBySlug);
 
 export default router;

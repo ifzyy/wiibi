@@ -81,6 +81,10 @@ module.exports = {
         defaultValue: false,
         comment: 'Is this the primary/featured image for its entity?',
       },
+      is_external:{
+              type: Sequelize.BOOLEAN,
+        defaultValue: false,
+      },
       display_order: {
         type: Sequelize.INTEGER,
         defaultValue: 0,

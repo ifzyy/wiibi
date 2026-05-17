@@ -5,129 +5,128 @@ export default (sequelize, DataTypes) => {
     'User',
     {
       id: {
-        type: DataTypes.UUID,
+        type:         DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      firstName: {
-        type: DataTypes.STRING(100),
-        allowNull: false,
-        field: 'first_name',
-      },
-      lastName: {
-        type: DataTypes.STRING(100),
-        allowNull: false,
-        field: 'last_name',
+        primaryKey:   true,
       },
       email: {
-        type: DataTypes.STRING(255),
-        allowNull: false,
-        unique: true,
-        validate: { isEmail: true },
+        type:      DataTypes.STRING(255),
+        allowNull: true,
+        unique:    true,
       },
-      emailVerified: {
-        type: DataTypes.BOOLEAN,
+      phoneNumber: {
+        type:      DataTypes.STRING(20),
+        allowNull: true,
+        unique:    true,
+        field:     'phone_number',
+      },
+      isVerified: {
+        type:         DataTypes.BOOLEAN,
         defaultValue: false,
-        field: 'email_verified',
+        field:        'is_verified',
       },
-      phone: {
-        type: DataTypes.STRING(20),
-        allowNull: true,
-        unique: true,
-      },
+      // ── Password auth (optional — set after OTP verification) ──────────────
       password: {
-        type: DataTypes.STRING(255),
-        allowNull: true, // null for Google/social users
+        type:      DataTypes.STRING(255),
+        allowNull: true,   // null until user explicitly sets a password
       },
-      googleId: {
-        type: DataTypes.STRING(255),
+      passwordSetAt: {
+        type:      DataTypes.DATE,
         allowNull: true,
-        unique: true,
-        field: 'google_id',
+        field:     'password_set_at',
+      },
+      // ── Password reset flow ────────────────────────────────────────────────
+      passwordResetToken: {
+        type:      DataTypes.STRING(255),
+        allowNull: true,
+        field:     'password_reset_token',
+      },
+      passwordResetExpires: {
+        type:      DataTypes.DATE,
+        allowNull: true,
+        field:     'password_reset_expires',
+      },
+      // ── Profile ───────────────────────────────────────────────────────────
+      firstName: {
+        type:      DataTypes.STRING(100),
+        allowNull: true,
+        field:     'first_name',
+      },
+      lastName: {
+        type:      DataTypes.STRING(100),
+        allowNull: true,
+        field:     'last_name',
       },
       avatarUrl: {
-        type: DataTypes.STRING(500),
+        type:      DataTypes.STRING(500),
         allowNull: true,
-        field: 'avatar_url',
+        field:     'avatar_url',
       },
+      // ── Role & status ─────────────────────────────────────────────────────
       role: {
-        type: DataTypes.ENUM('user', 'admin'),
-        allowNull: false,
+        type:         DataTypes.ENUM('user', 'admin'),
+        allowNull:    false,
         defaultValue: 'user',
       },
       isActive: {
-        type: DataTypes.BOOLEAN,
+        type:         DataTypes.BOOLEAN,
         defaultValue: true,
-        field: 'is_active',
+        field:        'is_active',
       },
-      lastLogin: {
-        type: DataTypes.DATE,
+      lastLoginAt: {
+        type:      DataTypes.DATE,
         allowNull: true,
-        field: 'last_login',
+        field:     'last_login_at',
       },
-      // Simple address storage (expand to separate table later if needed)
+      // ── Addresses (simple JSON — move to own table when needed) ───────────
       shippingAddress: {
-        type: DataTypes.TEXT,
+        type:      DataTypes.JSON,
         allowNull: true,
-        field: 'shipping_address',
-      },
-      billingAddress: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        field: 'billing_address',
-      },
-      // For password reset flow
-      passwordResetToken: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        field: 'password_reset_token',
-      },
-      passwordResetExpires: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        field: 'password_reset_expires',
-      },
-      // Optional: preferred contact for quotes/leads
-      preferredContactMethod: {
-        type: DataTypes.ENUM('email', 'phone', 'whatsapp'),
-        allowNull: true,
-        defaultValue: 'phone',
-        field: 'preferred_contact_method',
-      },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP'),
-        field: 'created_at',
-      },
-      updatedAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'),
-        field: 'updated_at',
+        field:     'shipping_address',
       },
     },
     {
-      tableName: 'users',
+      tableName:   'users',
       underscored: true,
-      paranoid: false,
+      paranoid:    false,
       indexes: [
-        { fields: ['email'], unique: true },
-        { fields: ['phone'], unique: true },
-        { fields: ['google_id'], unique: true },
+        { fields: ['phone_number'],        unique: true },
         { fields: ['role'] },
+        { fields: ['is_active'] },
         { fields: ['password_reset_token'] },
       ],
     }
   );
 
+  // ── Associations ────────────────────────────────────────────────────────────
   User.associate = (models) => {
-    // Future relations – add as features are built
-    // User.hasMany(models.Order, { foreignKey: 'userId' });
-    // User.hasMany(models.Lead, { foreignKey: 'userId' });
-    // User.hasMany(models.QuoteRequest, { foreignKey: 'userId' });
-    // User.hasMany(models.CalculatorResult, { foreignKey: 'userId' });
-    // User.hasMany(models.BlogComment, { foreignKey: 'userId' });
+    User.hasMany(models.OtpSession,    { foreignKey: 'userId', as: 'otpSessions',    onDelete: 'CASCADE' });
+    User.hasMany(models.RefreshToken,  { foreignKey: 'userId', as: 'refreshTokens',  onDelete: 'CASCADE' });
+    User.hasOne (models.Cart,          { foreignKey: 'userId', as: 'cart' });
+    User.hasMany(models.Order,         { foreignKey: 'userId', as: 'orders' });
+    User.hasMany(models.OAuthAccount,  { foreignKey: 'userId', as: 'oauthAccounts',  onDelete: 'CASCADE' });
+  };
+
+  // ── Safe public representation ──────────────────────────────────────────────
+  // Never exposes password hash, reset tokens, or raw OAuth data.
+  User.prototype.toSafeJSON = function () {
+    return {
+      id:              this.id,
+      email:           this.email,
+      phoneNumber:     this.phoneNumber,
+      firstName:       this.firstName,
+      lastName:        this.lastName,
+      avatarUrl:       this.avatarUrl,
+      isVerified:      this.isVerified,
+      hasPassword:     !!this.password,   // boolean only — never the hash
+      role:            this.role,
+      isActive:        this.isActive,
+      lastLoginAt:     this.lastLoginAt,
+      passwordSetAt:   this.passwordSetAt,
+      shippingAddress: this.shippingAddress,
+      createdAt:       this.createdAt,
+      updatedAt:       this.updatedAt,
+    };
   };
 
   return User;

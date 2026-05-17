@@ -17,7 +17,20 @@ export default (sequelize, DataTypes) => {
 
   PageSection.associate = (models) => {
     PageSection.belongsTo(models.Page, { foreignKey: 'pageId', onDelete: 'CASCADE' });
-    PageSection.belongsTo(models.Media, { as: 'BackgroundImage', foreignKey: 'backgroundImageId' });
+  PageSection.hasMany(models.PageSectionMedia, {
+      foreignKey: 'page_section_id',
+      as: 'mediaRelations',
+      onDelete: 'CASCADE',
+    });
+
+    // 3. Optional shortcut: PageSection belongs to many Media through junction
+    PageSection.belongsToMany(models.Media, {
+      through: models.PageSectionMedia,
+      foreignKey: 'page_section_id',
+      otherKey: 'media_id',
+      as: 'mediaItems',
+      constraints: false,
+    });
   };
 
   return PageSection;

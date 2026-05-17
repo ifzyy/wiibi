@@ -1,30 +1,35 @@
-"use strict";
+'use strict';
 
 const bcrypt = require('bcryptjs');
 
 module.exports = {
   async up(queryInterface) {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("Admin123Secure!", salt); // Change this password immediately after first login
+    const hashedPassword = await bcrypt.hash('Admin123Secure!', 12);
 
-    await queryInterface.bulkInsert("users", [
+    await queryInterface.bulkInsert('users', [
       {
-        id: "admin-0001-uuid", // Use a fixed short ID for seed (or let UUIDV4 generate)
-        first_name: "Admin",
-        last_name: "Wiibi",
-        email: "admin@wiibienergy.com",
-        phone: "09162102080",
-        password: hashedPassword,
-        google_id: null,
-        avatar_url: null,
-        role: "admin",
-        is_active: true,
-        last_login: null,
-        shipping_address:
-          "1, Olaoluwa Street, Off Adebowale Road, Ojodu, Lagos",
-        billing_address: "1, Olaoluwa Street, Off Adebowale Road, Ojodu, Lagos",
-        preferred_contact_method: "phone",
-        email_verified: true,
+        id:                     '00000000-0000-0000-0000-000000000001',
+        phone_number:           '+2347074375422',
+        is_verified:            true,
+        password:               hashedPassword,
+        password_set_at:        new Date(),
+        password_reset_token:   null,
+        password_reset_expires: null,
+        first_name:             'Admin',
+        last_name:              'Wiibi',
+        avatar_url:             null,
+        role:                   'admin',
+        is_active:              true,
+        last_login_at:          null,
+        shipping_address:       JSON.stringify({
+          fullName:     'Admin Wiibi',
+          addressLine1: '1, Olaoluwa Street, Off Adebowale Road',
+          city:         'Lagos',
+          state:        'Lagos',
+          postalCode:   '100001',
+          country:      'NG',
+          phone:        '+23474375422',
+        }),
         created_at: new Date(),
         updated_at: new Date(),
       },
@@ -33,9 +38,9 @@ module.exports = {
 
   async down(queryInterface) {
     await queryInterface.bulkDelete(
-      "users",
-      { email: "admin@wiibienergy.com" },
-      {},
+      'users',
+      { phone_number: '+23474375422' },
+      {}
     );
   },
 };

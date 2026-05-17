@@ -7,11 +7,7 @@ export default  (sequelize, DataTypes) => {
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    categoryId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      field: 'category_id',
-    },
+
     question: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -37,9 +33,9 @@ export default  (sequelize, DataTypes) => {
       field: 'created_at',
     },
     updatedAt: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      defaultValue: sequelize.literal('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'),
+  type: DataTypes.DATE,
+  defaultValue: DataTypes.NOW,
+
       field: 'updated_at',
     },
   }, {

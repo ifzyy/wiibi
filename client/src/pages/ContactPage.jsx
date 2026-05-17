@@ -1,35 +1,88 @@
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { ChevronRight, ChevronLeft, Maximize2 } from "lucide-react";
+import React from "react";
+import { ChevronRight, ChevronLeft } from "lucide-react";
+import { usePage, useFaqs } from "../hooks/queries";
 
-const API_BASE = "http://localhost:5000/api";
+// ── Skeleton primitives ────────────────────────────────────────────────────────
+const Skeleton = ({ className = "" }) => (
+  <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
+);
 
+const ContactSkeleton = () => (
+  <main className="bg-white min-h-screen">
+    {/* Breadcrumb */}
+    <nav className="max-w-7xl mx-auto px-6 pt-12">
+      <Skeleton className="h-3 w-32" />
+    </nav>
+
+    {/* Header */}
+    <header className="max-w-7xl mx-auto px-6 mt-8 mb-16 space-y-3">
+      <Skeleton className="h-3 w-24" />
+      <Skeleton className="h-12 w-64" />
+    </header>
+
+    {/* Main content */}
+    <section className="max-w-7xl mx-auto px-6 pb-24">
+      <Skeleton className="h-12 w-96 mb-16" />
+
+      <div className="grid lg:grid-cols-12 gap-16">
+        {/* Connect column */}
+        <div className="lg:col-span-3 space-y-10">
+          <Skeleton className="h-8 w-44" />
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="space-y-3">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-5 w-36" />
+              <Skeleton className="h-5 w-32" />
+            </div>
+          ))}
+        </div>
+
+        {/* Map column */}
+        <div className="lg:col-span-9 space-y-4">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-80" />
+          <Skeleton className="w-full aspect-[21/9] rounded-[2rem]" />
+        </div>
+      </div>
+    </section>
+
+    <div className="border-[1px] border-[#D9D9D9] p-8 my-20" />
+
+    {/* FAQ section */}
+    <section className="max-w-7xl mx-auto px-6 py-32">
+      <div className="grid lg:grid-cols-2 gap-20">
+        <div className="space-y-4">
+          <Skeleton className="h-3 w-48" />
+          <Skeleton className="h-14 w-72" />
+          <Skeleton className="h-14 w-64" />
+        </div>
+        <div className="space-y-6">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="py-6 border-b border-stone-100 space-y-3">
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-6 w-4/5" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  </main>
+);
+
+// ── Page component ─────────────────────────────────────────────────────────────
 const ContactPage = () => {
-  const [pageData, setPageData] = useState(null);
-  const [faqs, setFaqs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: pageData, isLoading: pageLoading, isError: pageError } = usePage("contact");
+  const { data: faqs = [], isLoading: faqsLoading } = useFaqs();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [pageRes, faqRes] = await Promise.all([
-          axios.get(`${API_BASE}/public/pages/contact`),
-          axios.get(`${API_BASE}/public/faqs`)
-        ]);
-        setPageData(pageRes.data);
-        setFaqs(faqRes.data);
-      } catch (err) {
-        console.error("Fetch error:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+  const isLoading = pageLoading || faqsLoading;
 
-  if (loading) return <div className="p-20 text-center font-black animate-pulse text-stone-300">LOADING CONTACT...</div>;
+  if (isLoading) return <ContactSkeleton />;
 
-  const mainSection = pageData?.sections?.find(s => s.type === "main") || {};
+  if (pageError || !pageData) {
+    return <div className="p-20 text-center font-bold">Page not found.</div>;
+  }
+
+  const mainSection = pageData?.sections?.find((s) => s.type === "main") || {};
   const { header, visit_info, connect_info } = mainSection?.content || {};
 
   return (
@@ -60,7 +113,6 @@ const ContactPage = () => {
           {/* Left: Connect Column */}
           <div className="lg:col-span-3">
             <h3 className="text-2xl font-black text-[#1A1102] mb-10">Connect with Us</h3>
-            
             <div className="space-y-10">
               {connect_info?.contact_methods?.map((method, i) => (
                 <div key={i}>
@@ -69,20 +121,17 @@ const ContactPage = () => {
                   </p>
                   <div className="space-y-3">
                     {method.values?.map((val, idx) => (
-                      <p key={idx} className="text-stone-900 font-bold text-base">
-                        {val}
-                      </p>
+                      <p key={idx} className="text-stone-900 font-bold text-base">{val}</p>
                     ))}
                   </div>
                 </div>
               ))}
-              
-              {/* Fallback if data is empty */}
+
               {!connect_info && (
                 <div>
-                   <p className="text-[#FFAA14] text-[11px] font-black uppercase tracking-widest mb-4">Phone Number</p>
-                   <p className="text-stone-900 font-bold text-base">0802 345 567</p>
-                   <p className="text-stone-900 font-bold text-base">0802 345 567</p>
+                  <p className="text-[#FFAA14] text-[11px] font-black uppercase tracking-widest mb-4">Phone Number</p>
+                  <p className="text-stone-900 font-bold text-base">0802 345 567</p>
+                  <p className="text-stone-900 font-bold text-base">0802 345 567</p>
                 </div>
               )}
             </div>
@@ -94,37 +143,26 @@ const ContactPage = () => {
             <p className="text-stone-500 text-base font-medium mb-8">
               {visit_info?.address || "1, Olaoluwa Street Off Adebowale Road, Ojodu"}
             </p>
-
             <div className="relative group">
-              {/* Map Container */}
-              <div className="w-full aspect-[21/9] rounded-[2rem] overflow-hidden bg-stone-100 border border-stone-100 shadow-sm relative">
+              <div className="w-full aspect-[21/9] rounded-[2rem] overflow-hidden bg-stone-100 border border-stone-100 shadow-sm">
                 <iframe
                   title="Wiibi Map"
                   src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3963.0253578794827!2d3.359265775850983!3d6.643760921742416!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x103b93943398935b%3A0x6b772c67c519d14a!2sOjodu%20Berger!5e0!3m2!1sen!2sng!4v1710000000000!5m2!1sen!2sng"
                   width="100%"
                   height="100%"
-                  style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }}
+                  style={{ border: 0, filter: "grayscale(0.2) contrast(1.1)" }}
                   loading="lazy"
-                ></iframe>
-                
-                {/* Map Control UI from Screenshot */}
-                <button className="absolute top-4 left-4 bg-stone-900/80 text-white p-2 rounded-lg backdrop-blur-md hover:bg-stone-900 transition-all">
-                  <Maximize2 size={20} />
-                </button>
-              </div>
-
-              {/* Floating Address Card (Optional - only if you want that specific look) */}
-              <div className="absolute -bottom-6 left-10 bg-white p-6 rounded-2xl shadow-xl border border-stone-50 hidden lg:block">
-                 <p className="text-[10px] font-black uppercase text-stone-400 mb-1">Our Location</p>
-                 <p className="text-sm font-black text-stone-900">Ojodu, Lagos State</p>
+                />
               </div>
             </div>
           </div>
         </div>
       </section>
 
+      <div className="border-[1px] border-[#D9D9D9] p-8 my-20" />
+
       {/* 3. FAQ SECTION */}
-      <section className="max-w-7xl mx-auto px-6 py-32 border-t border-stone-100">
+      <section className="max-w-7xl mx-auto px-6 py-32">
         <div className="grid lg:grid-cols-2 gap-20">
           <div>
             <span className="text-[#FFAA14] font-bold text-[11px] uppercase tracking-[0.3em] block mb-4">

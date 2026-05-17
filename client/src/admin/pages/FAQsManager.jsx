@@ -1,353 +1,189 @@
-import { useState, useEffect } from "react";
-import { Icon, I } from "../utils/icons.jsx";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "react-toastify";
+import api from "../utils/api";
 
-const FAQsManager = ({ activePageId, onHasChanges, onSaveRef, token }) => {
-  const [faqs, setFaqs] = useState({
-    general: [],
-    products: [],
-    technical: [],
-  });
+const FAQsManager = ({ onHasChanges }) => {
+  const [faqs, setFaqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState({});
   const [showModal, setShowModal] = useState(false);
+  
+  // States for Deletion Flow
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // Holds the FAQ object to delete
+  const [successType, setSuccessType] = useState(null); // 'updated' | 'deleted' | null
+
   const [editingFaq, setEditingFaq] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     question: "",
     answer: "",
-    category: "",
-    order: 0,
-    published: true,
+    display_order: 0,
+    is_visible: true,
   });
 
-  const categoryMap = {
-    "faq-general": "general",
-    "faq-products": "products",
-    "faq-technical": "technical",
-  };
-
-  const currentCategory = categoryMap[activePageId] || "general";
-
-  const categoryLabels = {
-    general: "General",
-    products: "Products",
-    technical: "Technical",
-  };
-
-  useEffect(() => {
-    loadFaqs();
+  const loadFaqs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/admin/faqs");
+      setFaqs(data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to load FAQs");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const loadFaqs = () => {
-    // Mock data - replace with actual API call
-    setFaqs({
-      general: [
-        {
-          id: 1,
-          question: "What services does Wiibi Energy provide?",
-          answer:
-            "We provide comprehensive renewable energy solutions including solar panel installation, wind turbine deployment, energy audits, and ongoing maintenance services.",
-          category: "general",
-          order: 1,
-          published: true,
-        },
-        {
-          id: 2,
-          question: "How long does installation typically take?",
-          answer:
-            "Installation timelines vary based on project size. Residential solar installations typically take 1-3 days, while commercial projects may take 1-4 weeks depending on complexity.",
-          category: "general",
-          order: 2,
-          published: true,
-        },
-      ],
-      products: [
-        {
-          id: 3,
-          question: "What types of solar panels do you offer?",
-          answer:
-            "We offer monocrystalline, polycrystalline, and thin-film solar panels from leading manufacturers. Our team will recommend the best option based on your specific needs and budget.",
-          category: "products",
-          order: 1,
-          published: true,
-        },
-        {
-          id: 4,
-          question: "Do you provide warranties on your products?",
-          answer:
-            "Yes, all our products come with comprehensive warranties. Solar panels typically have 25-year performance warranties, while inverters have 10-15 year warranties.",
-          category: "products",
-          order: 2,
-          published: true,
-        },
-      ],
-      technical: [
-        {
-          id: 5,
-          question: "Can solar panels work during cloudy days?",
-          answer:
-            "Yes, solar panels can still generate electricity on cloudy days, though at reduced efficiency (typically 10-25% of normal output). Modern panels are designed to capture diffuse light.",
-          category: "technical",
-          order: 1,
-          published: true,
-        },
-        {
-          id: 6,
-          question: "What maintenance is required for solar systems?",
-          answer:
-            "Solar systems require minimal maintenance. We recommend annual inspections and periodic cleaning. Most systems come with monitoring software to track performance.",
-          category: "technical",
-          order: 2,
-          published: true,
-        },
-      ],
-    });
-  };
+  useEffect(() => { loadFaqs(); }, [loadFaqs]);
+
+  const toggleExpand = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const handleAdd = () => {
     setEditingFaq(null);
-    setFormData({
-      question: "",
-      answer: "",
-      category: currentCategory,
-      order: faqs[currentCategory].length + 1,
-      published: true,
-    });
+    setFormData({ question: "", answer: "", display_order: faqs.length * 10 + 10, is_visible: true });
     setShowModal(true);
   };
 
-  const handleEdit = (faq) => {
+  const handleEdit = (faq, e) => {
+    e.stopPropagation();
     setEditingFaq(faq);
-    setFormData(faq);
+    setFormData({ ...faq });
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    if (confirm("Are you sure you want to delete this FAQ?")) {
-      setFaqs({
-        ...faqs,
-        [currentCategory]: faqs[currentCategory].filter((f) => f.id !== id),
-      });
-      toast.success("FAQ deleted successfully");
-      onHasChanges(true);
+  const handleSave = async () => {
+    if (!formData.question.trim() || !formData.answer.trim()) return;
+    setSubmitting(true);
+    try {
+      if (editingFaq) await api.put(`/admin/faqs/${editingFaq.id}`, formData);
+      else await api.post("/admin/faqs", formData);
+      
+      setShowModal(false);
+      setSuccessType('updated');
+      onHasChanges?.(true);
+      await loadFaqs();
+    } catch (err) {
+      toast.error("Save failed");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleSave = () => {
-    const newFaq = {
-      ...formData,
-      id: editingFaq?.id || Date.now(),
-      category: currentCategory,
-    };
+  // --- New Deletion Logic ---
+  const initiateDelete = (faq, e) => {
+    e.stopPropagation();
+    setDeleteConfirm(faq); // Open confirmation modal
+  };
 
-    if (editingFaq) {
-      setFaqs({
-        ...faqs,
-        [currentCategory]: faqs[currentCategory].map((f) =>
-          f.id === editingFaq.id ? newFaq : f
-        ),
-      });
-    } else {
-      setFaqs({
-        ...faqs,
-        [currentCategory]: [...faqs[currentCategory], newFaq],
-      });
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await api.delete(`/admin/faqs/${deleteConfirm.id}`);
+      setFaqs((prev) => prev.filter((f) => f.id !== deleteConfirm.id));
+      setDeleteConfirm(null); // Close confirm modal
+      setSuccessType('deleted'); // Show success modal
+      onHasChanges?.(true);
+    } catch (err) {
+      toast.error("Delete failed");
     }
-
-    setShowModal(false);
-    toast.success(editingFaq ? "FAQ updated" : "FAQ added");
-    onHasChanges(true);
   };
 
-  const togglePublished = (id) => {
-    setFaqs({
-      ...faqs,
-      [currentCategory]: faqs[currentCategory].map((f) =>
-        f.id === id ? { ...f, published: !f.published } : f
-      ),
-    });
-    onHasChanges(true);
-  };
+  const left = faqs.slice(0, 7);
+  const right = faqs.slice(7);
 
-  const currentFaqs = faqs[currentCategory] || [];
+  const FaqRow = ({ faq }) => (
+    <div className={`mb-6 ${!faq.is_visible ? "opacity-40" : ""}`}>
+      <div className="flex items-center justify-between cursor-pointer group" onClick={() => toggleExpand(faq.id)}>
+        <h3 className="text-[15px] font-semibold text-slate-800 pr-4">{faq.question}</h3>
+        <div className="flex items-center gap-4">
+          <svg className={`w-4 h-4 text-orange-500 transition-transform ${expanded[faq.id] ? "" : "rotate-180"}`} fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" /></svg>
+          <button onClick={(e) => handleEdit(faq, e)} className="bg-[#f2f2f2] cursor-pointer hover:bg-slate-100 px-3 py-1 rounded text-xs font-medium border border-transparent hover:border-slate-200">Edit</button>
+          <button onClick={(e) => initiateDelete(faq, e)} className="text-red-400 hover:text-red-600 p-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+          </button>
+        </div>
+      </div>
+      {expanded[faq.id] && (
+        <div className="mt-3 p-4 bg-[#f2f2f2] rounded-md text-sm text-slate-600 leading-relaxed border-l-4 border-amber-400">{faq.answer}</div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-slate-900">
-            {categoryLabels[currentCategory]} FAQs
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Manage frequently asked questions in this category
-          </p>
+    <div className="max-w-7xl mx-auto p-12 bg-[#F9FAFB] min-h-screen font-sans">
+      {/* Header unchanged */}
+      <header className="mb-12">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-3xl font-light text-slate-500">?</span>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">FAQs</h1>
         </div>
-        <button
-          onClick={handleAdd}
-          className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-amber-500/30 transition-all hover:scale-105"
-        >
-          <Icon d={I.plus} size={16} strokeWidth={2.5} />
-          Add FAQ
-        </button>
-      </div>
+        <p className="text-slate-500 text-sm">Edit, manage and give feedback on frequently asked questions.</p>
+      </header>
 
-      {/* FAQ List */}
-      <div className="space-y-4">
-        {currentFaqs.map((faq, index) => (
-          <div
-            key={faq.id}
-            className={`bg-white rounded-2xl border ${
-              faq.published ? "border-slate-200" : "border-slate-300 opacity-60"
-            } shadow-sm hover:shadow-lg transition-all p-6`}
-          >
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center">
-                <span className="text-sm font-black text-amber-700">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <h3 className="font-bold text-slate-900 text-base leading-tight">
-                    {faq.question}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {!faq.published && (
-                      <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md">
-                        Draft
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <p className="text-sm text-slate-600 leading-relaxed mb-4">
-                  {faq.answer}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => togglePublished(faq.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      faq.published
-                        ? "bg-green-100 text-green-700 hover:bg-green-200"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    <Icon
-                      d={faq.published ? I.eye : I.eyeOff}
-                      size={14}
-                      strokeWidth={2}
-                    />
-                    {faq.published ? "Published" : "Draft"}
-                  </button>
-                  <button
-                    onClick={() => handleEdit(faq)}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors"
-                  >
-                    <Icon d={I.edit} size={16} strokeWidth={2} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(faq.id)}
-                    className="p-2 rounded-lg hover:bg-red-50 text-slate-600 hover:text-red-600 transition-colors"
-                  >
-                    <Icon d={I.trash} size={16} strokeWidth={2} />
-                  </button>
-                </div>
-              </div>
-            </div>
+      {loading ? (
+        <div className="text-slate-400 animate-pulse">Loading...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-24">
+          <div className="space-y-2">{left.map(faq => <FaqRow key={faq.id} faq={faq} />)}</div>
+          <div className="flex flex-col">
+            <div className="space-y-2">{right.map(faq => <FaqRow key={faq.id} faq={faq} />)}</div>
+            <button onClick={handleAdd} className="mt-4 w-full bg-[#FFB319] hover:bg-[#E6A117] text-white font-bold py-4 rounded-lg shadow-sm transition-all text-base">Add</button>
           </div>
-        ))}
+        </div>
+      )}
 
-        {/* Empty state */}
-        {currentFaqs.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-slate-200">
-            <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-              <Icon d={I.helpCircle} size={32} className="text-slate-400" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">No FAQs yet</h3>
-            <p className="text-sm text-slate-500 mb-6">
-              Start by adding your first question and answer
-            </p>
-            <button
-              onClick={handleAdd}
-              className="px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg"
-            >
-              Add FAQ
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Modal */}
+      {/* 1. EDIT/CREATE MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-900">
-                {editingFaq ? "Edit FAQ" : "Add New FAQ"}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
-              >
-                <Icon d={I.x} size={20} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg p-8 shadow-2xl rounded-xl">
+            <h2 className="text-xl font-bold mb-6 text-slate-900">{editingFaq ? "Edit FAQ" : "Create FAQ"}</h2>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  Question
-                </label>
-                <input
-                  type="text"
-                  value={formData.question}
-                  onChange={(e) =>
-                    setFormData({ ...formData, question: e.target.value })
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm"
-                  placeholder="Enter the question"
-                />
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Question</label>
+                <input className="w-full bg-[#f2f2f2] p-3 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none" value={formData.question} onChange={e => setFormData({...formData, question: e.target.value})} />
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">
-                  Answer
-                </label>
-                <textarea
-                  value={formData.answer}
-                  onChange={(e) =>
-                    setFormData({ ...formData, answer: e.target.value })
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent text-sm resize-none"
-                  rows={6}
-                  placeholder="Enter the answer"
-                />
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Answer</label>
+                <textarea className="w-full bg-[#f2f2f2] p-3 h-32 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none resize-none" value={formData.answer} onChange={e => setFormData({...formData, answer: e.target.value})} />
               </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="published"
-                  checked={formData.published}
-                  onChange={(e) =>
-                    setFormData({ ...formData, published: e.target.checked })
-                  }
-                  className="w-5 h-5 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
-                />
-                <label htmlFor="published" className="text-sm font-bold text-slate-700">
-                  Publish immediately
-                </label>
+              <div className="flex justify-end gap-3 mt-6">
+                <button onClick={() => setShowModal(false)} className="px-6 py-2 text-slate-500 font-semibold">Cancel</button>
+                <button onClick={handleSave} className="px-6 py-2 bg-[#FFB319] text-white rounded-lg font-bold">Save</button>
               </div>
             </div>
-            <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-6 py-4 flex items-center justify-end gap-3">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-5 py-2.5 rounded-xl font-bold text-sm border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg transition-all"
-              >
-                {editingFaq ? "Update FAQ" : "Add FAQ"}
-              </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. CONFIRM DELETE MODAL */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[55]">
+          <div className="bg-white w-[400px] p-8 shadow-2xl rounded-xl text-center">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Delete FAQ?</h2>
+            <p className="text-slate-500 text-sm mb-8">Are you sure you want to delete this FAQ? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-colors">Cancel</button>
+              <button onClick={confirmDelete} className="flex-1 px-4 py-3 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. SUCCESS MODAL (Updated or Deleted) */}
+      {successType && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[60]">
+          <div className="bg-white w-[340px] p-10 shadow-2xl rounded-lg text-center flex flex-col items-center">
+            <div className="w-14 h-14 bg-[#009A00] rounded-full flex items-center justify-center mb-6">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h2 className="text-2xl font-medium text-slate-900 mb-8 whitespace-nowrap">
+              {successType === 'updated' ? 'FAQ Updated' : 'FAQ Deleted'}
+            </h2>
+            <button onClick={() => setSuccessType(null)} className="w-full bg-[#FFB319] hover:bg-[#E6A117] text-white font-bold py-3.5 rounded-lg transition-colors text-lg">
+              Continue
+            </button>
           </div>
         </div>
       )}

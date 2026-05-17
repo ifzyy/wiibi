@@ -1,9 +1,10 @@
 // src/config/db.js
 import { Sequelize } from 'sequelize';
 import dotenv from 'dotenv';
+import { sequelizeLogger } from '../utils/sequelizeLogger.js';
 
 dotenv.config();
-
+console.log(process.env.NODE_ENV)
 // Validate required environment variables
 const requiredEnv = ['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'];
 for (const envVar of requiredEnv) {
@@ -30,8 +31,8 @@ const sequelize = new Sequelize(
     },
 
     // Logging control
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-
+logging: sequelizeLogger,
+benchmark: true,
     // Recommended MySQL options
     timezone: '+01:00', // WAT timezone
     dialectOptions: {

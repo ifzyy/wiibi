@@ -36,36 +36,6 @@ const STORE_PREVIEW_CONTENT = {
   title:       "Online Store",
   heading:     "Go Solar",
   sub_heading: "Save more energy with our smart product",
-  products: [
-    {
-      name:             "Lithium Battery 5kWh",
-      description:      "Track power usage of any appliance",
-      price:            "₦850,000",
-      image_id:         "media-product-3",
-      link:             "/store/lithium-battery-5kwh",
-      buy_button_text:  "Buy Now",
-      but_button_link:  "/store/buy-lithium",
-    },
-    {
-      name:             "5kVA Hybrid Inverter",
-      description:      "Track power usage of any appliance",
-      price:            "₦1,250,000",
-      image_id:         "media-product-3",
-      link:             "/store/5kva-hybrid-inverter",
-      buy_button_text:  "Buy Now",
-      but_button_link:  "/store/buy-lithium",
-    },
-    // TODO: replace these placeholders with real distinct products
-    ...Array(6).fill(null).map(() => ({
-      name:            "Smart CCTV Camera",
-      description:     "Track power usage of any appliance",
-      price:           "₦145,000",
-      image_id:        "media-product-3",
-      link:            "/store/smart-cctv-camera",
-      buy_button_text: "Buy Now",
-      but_button_link: "/store/buy-lithium",
-    })),
-  ],
   button_text: "open store",
   button_link: "/store",
 };
@@ -218,7 +188,7 @@ const FOOTER_CONTENT = {
     instagram: "https://instagram.com/wiibienergy",
     twitter:   "https://twitter.com/wiibienergy",
   },
-  copyright: "© 2025 Wiibi Energy. All rights reserved.",
+  copyright: "© 2026 Wiibi Energy. All rights reserved.",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

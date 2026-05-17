@@ -27,13 +27,13 @@ const ABOUT_MAIN_CONTENT = {
     {
       main_heading: "Hands on Service",
       sub_headings: ["Professionalism", "Delivery"],
-      support_text: "By replacing fossil-fuel-based power sources, our installations measurably reduce greenhouse gas emissions.",
+      support_text: "Our commitment to delivery means a precision-managed roll out that integrates a high-capacity power asset into your infrastructure with zero disruption to your operations..",
       main_image:   "media-hands-on-service",
     },
     {
       main_heading: "We Care",
       icon:         "leaf-icon",
-      support_text: "By replacing fossil-fuel-based power sources, our installations measurably reduce greenhouse gas emissions.",
+      support_text: "By replacing fossil-fuel-based power sources, our installations measurably reduce greenhouse gas emissions",
       main_image:   "media-environmental-care",
       bg_color:     "#F9FFF2",
     },
@@ -42,7 +42,7 @@ const ABOUT_MAIN_CONTENT = {
   staff_header:{
       main_heading: "Our Leadership",
       sub_headings: ["Visionaries", "Focused"],
-      support_text: "By replacing fossil-fuel-based power sources, our installations measurably reduce greenhouse gas emissions.",
+      support_text: "Our leadership takes full accountability for your energy transition, providing the strategic vision and engineering focus required to turn complex urban challenges into high-capacity power assets.",
       main_image:   "media-leadership-team",
   },
   staff_grid: [

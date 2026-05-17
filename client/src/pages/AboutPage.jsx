@@ -1,161 +1,308 @@
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { Leaf, ArrowUpRight, ChevronRight } from "lucide-react";
+import React from "react";
+import { Leaf, ChevronRight, Building2, ClipboardList, FileSearch, Zap } from "lucide-react";
+import { usePage } from "../hooks/queries";
+import { QuoteRequestForm } from "./ServicesPage";
 
-const AboutPage = () => {
-  const [pageData, setPageData] = useState(null);
-  const [loading, setLoading] = useState(true);
+const PROCESS_ICONS = {
+  1: <Building2 className="w-5 h-5 text-[#FFAA14]" />,
+  2: <ClipboardList className="w-5 h-5 text-[#FFAA14]" />,
+  3: <FileSearch className="w-5 h-5 text-[#FFAA14]" />,
+  4: <Zap className="w-5 h-5 text-[#FFAA14]" />,
+};
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await axios.get(
-          "http://localhost:5000/api/public/pages/about",
-        );
-        setPageData(response.data);
-      } catch (error) {
-        console.error("Error fetching about page data", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+// ── Skeleton primitives ────────────────────────────────────────────────────────
+const Skeleton = ({ className = "" }) => (
+  <div className={`animate-pulse bg-gray-200 rounded ${className}`} />
+);
 
-  if (loading)
-    return (
-      <div className="p-20 text-center font-black italic">
-        Wiibi is loading...
+const AboutSkeleton = () => (
+  <main className="bg-white font-sans">
+    {/* Breadcrumb + header */}
+    <header className="max-w-7xl mx-auto px-8 pt-16 pb-8 space-y-3">
+      <Skeleton className="h-3 w-32" />
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-6 w-40" />
+    </header>
+
+    <div className="border-[1px] border-[#D9D9D9] p-8 mb-20" />
+
+    {/* Hero */}
+    <section className="max-w-7xl mx-auto px-8 space-y-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-36" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <Skeleton className="h-28 w-96 rounded-lg" />
       </div>
-    );
-  if (!pageData)
+      <Skeleton className="w-full aspect-[21/9] rounded-[2.5rem]" />
+    </section>
+
+    {/* Pillars */}
+    <section className="py-24 space-y-24">
+      <div className="max-w-7xl mx-auto px-8">
+        <div className="grid grid-cols-[1fr_2fr_1fr] gap-8 items-start">
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-36" />
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-8 w-28" />
+          </div>
+          <Skeleton className="w-full aspect-[4/3] rounded-[2rem]" />
+          <div className="space-y-2 pt-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 py-16">
+        <div className="max-w-7xl mx-auto px-8">
+          <div className="grid grid-cols-[2fr_1fr] gap-8">
+            <Skeleton className="w-full min-h-[360px] rounded-[2rem]" />
+            <div className="flex flex-col justify-center pl-4 space-y-4">
+              <Skeleton className="h-7 w-7 rounded-full" />
+              <Skeleton className="h-10 w-40" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-4/5" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div className="border-[1px] border-[#D9D9D9] p-8" />
+
+    {/* Staff grid */}
+    <section className="max-w-7xl mx-auto px-8 py-24">
+      <div className="flex justify-between items-center mb-20">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-8 w-36" />
+        </div>
+        <div className="space-y-2 max-w-sm w-full">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-4/5" />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-x-8 gap-y-12">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="space-y-3">
+            <Skeleton className="w-full aspect-[3/4] rounded-3xl" />
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <div className="border-[1px] border-[#D9D9D9] p-8" />
+  </main>
+);
+
+// ── Page component ─────────────────────────────────────────────────────────────
+const AboutPage = () => {
+  const { data: pageData, isLoading, isError } = usePage("about");
+console.log("AboutPage data:", pageData);
+  if (isLoading) return <AboutSkeleton />;
+
+  if (isError || !pageData) {
     return <div className="p-20 text-center font-bold">Page not found.</div>;
+  }
 
   const section = pageData.sections.find((s) => s.type === "about_hero");
-  const { brand_info, hero_section, pillars, staff_grid } = section.content;
+  const { brand_info, hero_section, pillars, staff_grid, staff_header } = section.content;
+// Resolve images from media array by role — not from content strings
+const getMediaUrl = (role) =>
+  section.media?.find((m) => m.role === role)?.url ?? null;
+
+const heroImageUrl   = getMediaUrl("hero");
+const pillar1Image   = getMediaUrl("pillar1-image");   // whatever role you assigned
+const pillar2Image   = getMediaUrl("pillar2-image");
+const staffImages = staff_grid.map((_, i) => getMediaUrl(`staff-media-${i+1}`)); // e.g. "staff-media-1", "staff-media-2", etc.
+console.log("Resolved media URLs:", { heroImageUrl, pillar1Image, pillar2Image, staffImages });
 
   return (
-    <main className="bg-white selection:bg-amber-100">
-      {/* 1. MINIMALIST BREADCRUMB HEADER */}
-      <header className="max-w-7xl mx-auto px-6 pt-16 pb-12 border-b  border-stone-50 -50">
-        <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#FFAA14 ] -400 mb-6">
-          <span className="hover:text-[#FFAA14 ]   cursor-pointer transition-colors">
-            Home
-          </span>
-          <ChevronRight size={10} strokeWidth={3} />
-          <span className="text-amber-500">{brand_info.main_heading}</span>
+    <main className="bg-white selection:bg-amber-100 font-sans">
+      {/* 1. BREADCRUMB HEADER */}
+      <header className="max-w-7xl mx-auto px-8 pt-16 pb-8">
+        <nav className="flex items-center gap-2 text-[10px] font-normal uppercase tracking-widest text-[#ffaa14] mb-8">
+          <a href="/" className="text-black">Home</a>
+          <ChevronRight size={10} strokeWidth={4} />
+          <span className="text-[#ffaa14]">{brand_info.main_heading}</span>
         </nav>
-        <span className="text-amber-500 font-bold text-[11px] uppercase tracking-[0.3em] block mb-3">
-          {brand_info.sub_heading}
-        </span>
-        <h1 className="text-4xl md:text-5xl font-black text-[#FFAA14 ]   tracking-tight">
-          {brand_info.main_heading}
-        </h1>
+        <p className="text-[#ffaa14] text-[14px]">{brand_info.sub_heading}</p>
+        <h2 className="text-black text-[20px] font-bold">{brand_info.main_heading}</h2>
       </header>
 
-      {/* 2. HIVE OF INNOVATION HERO SECTION */}
-      <section className="max-w-7xl mx-auto px-6 py-24">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-12 mb-16">
-          <div className="space-y-1">
-            <h2 className="text-[#FDB927] text-4xl font-black tracking-tight">
+      <div className="border-[1px] border-[#D9D9D9] p-8 mb-20" />
+
+      {/* 2. HERO SECTION */}
+      <section className="max-w-7xl mx-auto px-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-12">
+          <div className="mb-4 md:mb-0">
+            <h2 className="text-[#FDB927] text-4xl font-medium tracking-tighter leading-none mb-2">
               {brand_info.brand_name}
             </h2>
-            <p className="text-[#FFAA14 ] -400 text-[10px] font-black uppercase tracking-[0.2em]">
+            <p className="text-stone-400 text-[10px] font-bold uppercase tracking-[0.3em]">
               {brand_info.location}
             </p>
           </div>
-          <h2 className="text-5xl md:text-8xl font-black text-[#FFAA14 ]   tracking-tighter leading-[0.9]">
-            <span className="text-[#FFAA14 ] -200">Hive of</span>{" "}
-            <br className="hidden md:block" /> Innovation
+          <h2 className="text-6xl md:text-[7rem] font-semibold text-[#333] tracking-tighter leading-[0.85] text-right">
+            {hero_section.display_title.split(" ").map((word, index, arr) => (
+              <span key={index} className={index === arr.length - 1 ? "text-[#1a1102]" : "text-stone-200"}>
+                {word}{" "}
+              </span>
+            ))}
           </h2>
         </div>
 
-        {/* Large Placeholder for Hero Image */}
-        <div className="w-full aspect-[21/9] bg-[#FFAA14 ] -50 rounded-[2.5rem] overflow-hidden border  border-stone-50 -100 shadow-sm relative group">
-          <div className="absolute inset-0 bg-gradient-to-t from-[#FFAA14 ]  /10 to-transparent" />
-          <div className="w-full h-full flex items-center justify-center text-[#FFAA14 ] -200 font-black italic text-xl uppercase tracking-widest">
-            [{hero_section.main_image}]
+        <div className="w-full aspect-[21/9] bg-stone-50 rounded-[2.5rem] overflow-hidden border border-stone-100 shadow-sm">
+          {heroImageUrl && (
+            <img src={heroImageUrl} className="w-full h-full object-cover" alt="Hero" />
+          )}
+        </div>
+      </section>
+
+      {/* 3. VALUE PILLARS */}
+      <section className="py-24 space-y-0">
+        {/* Pillar 1 */}
+        <div className="max-w-7xl mx-auto px-8">
+          <div className="grid grid-cols-[1fr_2fr_1fr] gap-8 items-start">
+            <div className="pt-2">
+              <h3 className="text-4xl font-medium text-black tracking-tight mb-3">
+                {pillars[0].main_heading}
+              </h3>
+              {pillars[0].sub_headings && (
+                <div className="flex flex-col font-medium leading-tight">
+                  {pillars[0].sub_headings.map((sh, i) => (
+                    <span key={i} className="text-4xl font-medium text-stone-200 cursor-default">{sh}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="w-full aspect-[4/3] bg-stone-50 rounded-[2rem] overflow-hidden border border-stone-100">
+              {pillar1Image && (
+                <img src={pillar1Image} className="w-full h-full object-cover" alt={pillars[0].main_heading} />
+              )}
+            </div>
+            <div className="pt-2">
+              <p className="text-stone-500 text-base leading-relaxed">{pillars[0].support_text}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Pillar 2 */}
+        <div className="mt-24" style={{ backgroundColor: pillars[1].bg_color || "#f5f7ee" }}>
+          <div className="max-w-7xl mx-auto px-8 py-16">
+            <div className="grid grid-cols-[2fr_1fr] gap-8 items-stretch">
+              <div className="w-full min-h-[360px] bg-stone-100 rounded-[2rem] overflow-hidden border border-stone-200">
+                {pillar2Image && (
+                  <img src={pillar2Image} className="w-full h-full object-cover" alt={pillars[1].main_heading} />
+                )}
+              </div>
+              <div className="flex flex-col justify-center pl-4">
+                {pillars[1].icon === "leaf-icon" && <Leaf className="text-emerald-700 mb-4" size={28} />}
+                <h3 className="text-4xl font-black text-stone-700 tracking-tight mb-4">{pillars[1].main_heading}</h3>
+                <p className="text-stone-500 text-base leading-relaxed">{pillars[1].support_text}</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
+      {/* 5. LEADERSHIP / STAFF GRID */}
+      <section className="max-w-7xl mx-auto px-8 py-24">
+        <div className="flex justify-between items-center mb-20">
+          <div>
+            <h3 className="text-3xl font-bold text-black tracking-tight mb-1">{staff_header.main_heading}</h3>
+            {staff_header.sub_headings?.map((heading, i) => (
+              <p key={i} className="text-3xl font-bold text-stone-300 leading-snug">{heading}</p>
+            ))}
+          </div>
+          <div className="flex items-start justify-start pt-1">
+            <p className="text-stone-500 text-base leading-relaxed max-w-sm">{staff_header.support_text}</p>
+          </div>
+        </div>
 
-      {/* 3. VALUE PILLARS (The "Hands On" & "We Care" Layout) */}
-      <section className="max-w-7xl mx-auto px-6 py-32 space-y-48">
-        {pillars.map((pillar, index) => {
-          const isWeCare = pillar.main_heading === "We Care";
+      </section>
 
-          return (
-            <div
-              key={index}
-              className={`flex flex-col md:flex-row items-center gap-20 transition-all duration-700 ${pillar.bg_color ? "p-16 rounded-[4rem] border  border-stone-50 -50" : ""}`}
-              style={{ backgroundColor: pillar.bg_color || "transparent" }}
-            >
-              {/* Image Container */}
-              <div
-                className={`flex-1 w-full aspect-[4/3] rounded-[2rem] overflow-hidden shadow-sm border  border-stone-50 -100/50 bg-white ${index % 2 !== 0 ? "md:order-2" : ""}`}
-              >
-                <div className="w-full h-full flex items-center justify-center text-[#FFAA14 ] -200 font-bold tracking-widest uppercase text-xs">
-                  [{pillar.main_image}]
-                </div>
-              </div>
+  
 
-              {/* Content Container */}
-              <div className="flex-1 space-y-8">
-                {pillar.icon === "leaf-icon" && (
-                  <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center border border-emerald-100/50">
-                    <Leaf size={28} fill="currentColor" />
-                  </div>
+      {/* 4. CONTACT PROCESS */}
+      <section className="py-24">
+        <div className="border border-[#D9D9D9] w-full">
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <p className="text-[#FFAA14] font-medium">Get Started</p>
+            <h3 className="text-3xl font-black text-black mb-2">Our Process</h3>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-20 max-w-7xl mx-auto px-6 py-8">
+          {/* LEFT: PROCESS STEPS */}
+          <div className="space-y-16">
+            {[
+              {
+                step_number: 1,
+                heading: "Site Assessment",
+                support_text: "Our team visits your location to understand your energy needs and evaluate site conditions."
+              },
+              {
+                step_number: 2,
+                heading: "Custom Design",
+                support_text: "We create a tailored solar solution designed specifically for your requirements."
+              },
+              {
+                step_number: 3,
+                heading: "Proposal & Review",
+                support_text: "Present detailed proposal including costs, savings, and implementation timeline."
+              },
+              {
+                step_number: 4,
+                heading: "Installation & Support",
+                support_text: "Professional installation followed by comprehensive maintenance and support."
+              }
+            ].map((step, idx) => (
+              <div key={idx} className="relative flex flex-col group">
+                {idx !== 3 && (
+                  <div className="absolute left-[26px] top-14 w-[1px] h-full bg-amber-100" />
                 )}
-
                 <div>
-                  <h3 className="text-5xl font-black text-[#FFAA14 ]   tracking-tight mb-4">
-                    {pillar.main_heading}
-                  </h3>
-
-                  {/* Large Stylized Secondary Text */}
-                  {pillar.sub_headings && (
-                    <div className="flex flex-col text-5xl font-black text-[#FFAA14 ] -100 leading-tight mb-8">
-                      {pillar.sub_headings.map((sh, i) => (
-                        <span
-                          key={i}
-                          className="hover:text-[#FFAA14 ] -200 transition-colors cursor-default"
-                        >
-                          {sh}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <p className="text-[#FFAA14 ] -500 text-lg leading-relaxed max-w-sm">
-                    {pillar.support_text}
+                  <div className="pb-2 rounded-2xl group-hover:bg-white group-hover:shadow-md transition-all duration-300">
+                    {PROCESS_ICONS[step.step_number] || <Zap size={20} />}
+                  </div>
+                  <h4 className="text-[14px] font-black text-[#FFAA14] mb-3">
+                    {step.step_number} {step.heading}
+                  </h4>
+                  <p className="text-stone-500 text-sm leading-relaxed max-w-sm">
+                    {step.support_text}
                   </p>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </section>
+            ))}
+          </div>
 
-      {/* 4. LEADERSHIP / STAFF GRID */}
-      <section className="max-w-7xl mx-auto px-6 py-32">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-16">
-          {staff_grid.map((staff, i) => (
-            <div key={i} className="group cursor-pointer">
-              <div className="aspect-square bg-[#FFAA14 ] -50 rounded-[2rem] mb-6 overflow-hidden border  border-stone-50 -100 transition-all duration-500 group-hover:shadow-2xl group-hover:shadow-[#FFAA14 ] -200/50 group-hover:-translate-y-2">
-                <div className="w-full h-full flex items-center justify-center text-[#FFAA14 ] -200 uppercase font-black tracking-tighter text-xs">
-                  {staff.image}
-                </div>
-              </div>
-              <h5 className="font-black text-[#FFAA14 ]   text-xl mb-1 tracking-tight">
-                {staff.name}
-              </h5>
-              <p className="text-[#FFAA14 ] -400 text-xs font-black uppercase tracking-widest">
-                {staff.role}
-              </p>
-            </div>
-          ))}
+          {/* RIGHT: FORM */}
+          <div className="bg-white min-h-[500px] flex flex-col justify-center">
+            <QuoteRequestForm formSettings={{
+              fields: [
+                { label: "Business Name", type: "text", placeholder: "Enter your name" },
+                { label: "Business Email", type: "email", placeholder: "Enter your email" },
+                { label: "Phone Number", type: "tel", placeholder: "" },
+                { label: "Property Type", type: "select", placeholder: "Select type" },
+                { label: "State", type: "select", placeholder: "Select state" },
+                { label: "LGA", type: "select", placeholder: "Select LGA" },
+                { label: "Business Description", type: "textarea", placeholder: "Tell us about yourself" },
+              ],
+              submit_button_text: "Get Started"
+            }} />
+          </div>
         </div>
       </section>
+      <div className="border-[1px] border-[#D9D9D9] p-8" />
     </main>
   );
 };

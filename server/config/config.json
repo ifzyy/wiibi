@@ -1,6 +1,6 @@
 {
   "development": {
-    "username": "devuser",
+    "username": "root",
     "password": "Johnson#2#3",
     "database": "wiibi",
     "host": "localhost",
