@@ -7,20 +7,26 @@
  * Flow:
  *  1. POST /payment/initialize → { authorization_url, reference }
  *  2. Redirect to authorization_url (mock gateway in dev, real Paystack in prod)
- *  3. Paystack redirects back to GET /payment/verify/:orderId (backend)
+ *  3. Provider redirects back to GET /payment/verify/:orderId (backend)
  *  4. Backend redirects to /orders/:orderNumber?payment=success
  *
  * Error path:
  *  Backend redirects to /payment?orderId=xxx&error=message
- *  This page reads ?error and shows Try Again / Go Back
+ *  This page reads ?error and shows a recoverable error card.
+ *
+ * No-session path:
+ *  If the user navigates directly to /payment with no state (e.g. after a
+ *  refresh), they see a clear "session expired" card with a link to their orders.
  */
 
-import { useState, useEffect } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, ShieldCheck, AlertCircle, RefreshCw, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { Lock, ShieldCheck, AlertCircle, RefreshCw, ArrowLeft, Package } from 'lucide-react';
 import { api } from '../utils/api.js';
 
-const fmt = (n) => '₦' + (n ?? 0).toLocaleString('en-NG');
+const fmt = (n) => n > 0 ? '₦' + Number(n).toLocaleString('en-NG') : null;
+
+/* ── Sub-components ──────────────────────────────────────────────────────── */
 
 const Spinner = () => (
   <div style={{
@@ -32,43 +38,58 @@ const Spinner = () => (
   }} />
 );
 
-const PaymentPage = () => {
-  const location        = useLocation();
-  const navigate        = useNavigate();
-  const [params]        = useSearchParams();
+const AmountCard = ({ orderTotal, orderNumber }) => {
+  const formatted = fmt(orderTotal);
+  if (!formatted) return null;
+  return (
+    <div className="bg-[#F9F9F9] rounded-xl px-5 py-4 w-full text-center">
+      <p className="text-[10px] text-[#B8A98A] uppercase tracking-widest font-bold mb-1">Amount</p>
+      <p className="text-2xl font-black text-[#1A1102]">{formatted}</p>
+      {orderNumber && (
+        <p className="text-xs text-[#B8A98A] font-mono mt-0.5">{orderNumber}</p>
+      )}
+    </div>
+  );
+};
 
-  // Passed from CheckoutPage via router state
+/* ── PaymentPage ─────────────────────────────────────────────────────────── */
+
+const PaymentPage = () => {
+  const location  = useLocation();
+  const navigate  = useNavigate();
+  const [params]  = useSearchParams();
+
   const {
-    orderId: stateOrderId,
+    orderId:    stateOrderId,
     orderNumber,
     orderTotal,
-    guestEmail,       // always passed from CheckoutPage — the email the user typed
+    guestEmail,
   } = location.state ?? {};
 
-  // Error case: backend redirects here with ?error=... after failed verification
   const redirectError   = params.get('error');
   const redirectOrderId = params.get('orderId') ?? stateOrderId;
 
-  const [phase,    setPhase]    = useState('loading'); // loading | redirecting | error
+  const [phase,    setPhase]    = useState('idle');  // idle | loading | redirecting | error | no-session
   const [errorMsg, setErrorMsg] = useState(null);
+  const [retrying, setRetrying] = useState(false);
+
+  // Prevent double-initialize on StrictMode double mount
+  const calledRef = useRef(false);
 
   const initialize = async () => {
     if (!redirectOrderId) {
-      setErrorMsg('No order found. Please go back and try again.');
-      setPhase('error');
+      setPhase('no-session');
       return;
     }
 
     setPhase('loading');
     setErrorMsg(null);
+    setRetrying(false);
 
     try {
-      // Send guestEmail alongside orderId so the backend has the email
-      // even for orders that were created before this fix (guest_email = NULL in DB).
-      // paymentController uses order.guestEmail first, then falls back to req.body.email.
       const res = await api.post('/payment/initialize', {
         orderId: redirectOrderId,
-        email:   guestEmail,   // ← THE FIX: always send the email from checkout state
+        email:   guestEmail,
       });
       const { authorization_url } = res.data.data;
 
@@ -79,16 +100,13 @@ const PaymentPage = () => {
       const status  = err?.response?.status;
       const message = err?.response?.data?.message ?? '';
 
-      // 409 = already paid (webhook confirmed while user was on gateway page).
-      // Instead of showing an error, redirect straight to the order success page.
-      if (status === 409 && orderNumber) {
-        window.location.replace('/orders/' + orderNumber + '?payment=success');
-        return;
-      }
-
       if (status === 409) {
-        setErrorMsg('Your payment was already confirmed. Check your orders.');
-        setPhase('error');
+        if (orderNumber) {
+          window.location.replace('/orders/' + orderNumber + '?payment=success');
+        } else {
+          setErrorMsg('Your payment was already confirmed. Check your orders.');
+          setPhase('error');
+        }
         return;
       }
 
@@ -97,7 +115,15 @@ const PaymentPage = () => {
     }
   };
 
+  const handleRetry = () => {
+    setRetrying(true);
+    initialize();
+  };
+
   useEffect(() => {
+    if (calledRef.current) return;
+    calledRef.current = true;
+
     if (redirectError) {
       setErrorMsg(decodeURIComponent(redirectError));
       setPhase('error');
@@ -118,9 +144,8 @@ const PaymentPage = () => {
         <div className="bg-white rounded-2xl border border-[#F1F1F1] p-8">
 
           {/* ── Loading / redirecting ── */}
-          {(phase === 'loading' || phase === 'redirecting') && (
+          {(phase === 'idle' || phase === 'loading' || phase === 'redirecting') && (
             <div className="flex flex-col items-center text-center gap-6">
-
               <div className="w-16 h-16 rounded-full bg-[#FFF8E7] flex items-center justify-center">
                 <Lock size={26} className="text-[#FFAA14]" />
               </div>
@@ -136,16 +161,7 @@ const PaymentPage = () => {
                 </p>
               </div>
 
-              {orderTotal && (
-                <div className="bg-[#F9F9F9] rounded-xl px-5 py-4 w-full text-center">
-                  <p className="text-[10px] text-[#B8A98A] uppercase tracking-widest font-bold mb-1">Amount</p>
-                  <p className="text-2xl font-black text-[#1A1102]">{fmt(orderTotal)}</p>
-                  {orderNumber && (
-                    <p className="text-xs text-[#B8A98A] font-mono mt-0.5">{orderNumber}</p>
-                  )}
-                </div>
-              )}
-
+              <AmountCard orderTotal={orderTotal} orderNumber={orderNumber} />
               <Spinner />
 
               <p className="text-xs text-[#B8A98A] flex items-center gap-1.5">
@@ -158,7 +174,6 @@ const PaymentPage = () => {
           {/* ── Error ── */}
           {phase === 'error' && (
             <div className="flex flex-col items-center text-center gap-5">
-
               <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center">
                 <AlertCircle size={26} className="text-red-400" />
               </div>
@@ -168,20 +183,17 @@ const PaymentPage = () => {
                 <p className="text-sm text-[#B8A98A] leading-relaxed">{errorMsg}</p>
               </div>
 
-              {orderTotal && (
-                <div className="bg-[#F9F9F9] rounded-xl px-5 py-4 w-full text-center">
-                  <p className="text-[10px] text-[#B8A98A] uppercase tracking-widest font-bold mb-1">Order</p>
-                  <p className="text-xl font-black text-[#1A1102]">{fmt(orderTotal)}</p>
-                  {orderNumber && <p className="text-xs text-[#B8A98A] font-mono mt-0.5">{orderNumber}</p>}
-                </div>
-              )}
+              <AmountCard orderTotal={orderTotal} orderNumber={orderNumber} />
 
               <div className="flex flex-col gap-3 w-full">
                 <button
-                  onClick={initialize}
-                  className="w-full py-3.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-black text-sm flex items-center justify-center gap-2 hover:bg-amber-400 transition-colors"
+                  onClick={handleRetry}
+                  disabled={retrying}
+                  className="w-full py-3.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-black text-sm flex items-center justify-center gap-2 hover:bg-amber-400 transition-colors disabled:opacity-60"
                 >
-                  <RefreshCw size={14} /> Try Again
+                  {retrying
+                    ? <><Spinner /> Retrying…</>
+                    : <><RefreshCw size={14} /> Try Again</>}
                 </button>
                 <button
                   onClick={() => navigate(-1)}
@@ -191,7 +203,45 @@ const PaymentPage = () => {
                 </button>
               </div>
 
-              <p className="text-xs text-[#B8A98A]">Your order is saved. You have not been charged.</p>
+              <p className="text-xs text-[#B8A98A]">
+                Your order is saved. You have <strong>not</strong> been charged.
+              </p>
+            </div>
+          )}
+
+          {/* ── No session (page refreshed / navigated directly) ── */}
+          {phase === 'no-session' && (
+            <div className="flex flex-col items-center text-center gap-5">
+              <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center">
+                <Package size={26} className="text-[#FFAA14]" />
+              </div>
+
+              <div>
+                <h1 className="text-xl font-black text-[#1A1102] mb-1.5">Session Expired</h1>
+                <p className="text-sm text-[#B8A98A] leading-relaxed">
+                  We couldn't find your order details. This can happen if you refreshed
+                  the page mid-checkout.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 w-full">
+                <Link
+                  to="/orders"
+                  className="w-full py-3.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-black text-sm flex items-center justify-center gap-2 hover:bg-amber-400 transition-colors"
+                >
+                  View My Orders
+                </Link>
+                <button
+                  onClick={() => navigate('/cart')}
+                  className="w-full py-3 rounded-xl bg-[#F9F9F9] text-[#6B6040] font-bold text-sm flex items-center justify-center gap-2 border border-[#F1F1F1] hover:bg-[#F1F1F1] transition-colors"
+                >
+                  <ArrowLeft size={14} /> Back to Cart
+                </button>
+              </div>
+
+              <p className="text-xs text-[#B8A98A]">
+                If you placed an order, it's safe — check your orders above.
+              </p>
             </div>
           )}
 

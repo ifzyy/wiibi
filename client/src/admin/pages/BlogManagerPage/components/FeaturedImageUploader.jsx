@@ -1,20 +1,42 @@
 import { useState, useRef, useCallback } from "react";
+import { uploadFile } from "../../../../utils/uploadApi";
 
-export default function FeaturedImageUploader({ value, onChange }) {
-  const [mode, setMode] = useState("idle"); // idle | url
-  const [urlInput, setUrlInput] = useState("");
-  const [urlError, setUrlError] = useState("");
+/**
+ * FeaturedImageUploader
+ *
+ * Props:
+ *   value      — current image URL (string | null)
+ *   onChange   — called with a server URL string on upload, or null on remove
+ *   entityType — passed to the upload endpoint (default: "blog")
+ *
+ * Behavior: uploads immediately on file selection, then calls onChange with
+ * the permanent server URL. No blob URLs are stored in parent state.
+ */
+export default function FeaturedImageUploader({ value, onChange, entityType = "blog" }) {
+  const [mode,       setMode]       = useState("idle");   // "idle" | "url"
+  const [urlInput,   setUrlInput]   = useState("");
+  const [urlError,   setUrlError]   = useState("");
   const [isDragging, setIsDragging] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError,  setLoadError]  = useState(false);
+  const [uploading,  setUploading]  = useState(false);
+  const [uploadErr,  setUploadErr]  = useState("");
   const fileRef = useRef(null);
 
-  const applyFile = (file) => {
+  const applyFile = useCallback(async (file) => {
     if (!file || !file.type.startsWith("image/")) return;
-    const url = URL.createObjectURL(file);
-    onChange(url);
-    setMode("idle");
+    setUploadErr("");
     setLoadError(false);
-  };
+    setUploading(true);
+    try {
+      const record = await uploadFile(file, { entityType, role: "main" });
+      onChange(record.url);
+      setMode("idle");
+    } catch (err) {
+      setUploadErr(err.response?.data?.error || err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }, [entityType, onChange]);
 
   const applyUrl = () => {
     const trimmed = urlInput.trim();
@@ -33,16 +55,17 @@ export default function FeaturedImageUploader({ value, onChange }) {
     const file = e.dataTransfer.files?.[0];
     if (file) { applyFile(file); return; }
     const url = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
-    if (url && url.startsWith("http")) { onChange(url); setLoadError(false); }
-  }, []);
+    if (url?.startsWith("http")) { onChange(url); setLoadError(false); }
+  }, [applyFile, onChange]);
 
   const handlePaste = useCallback((e) => {
     const file = e.clipboardData?.files?.[0];
     if (file) { applyFile(file); return; }
     const text = e.clipboardData?.getData("text");
-    if (text && text.startsWith("http")) { onChange(text); setLoadError(false); }
-  }, []);
+    if (text?.startsWith("http")) { onChange(text); setLoadError(false); }
+  }, [applyFile, onChange]);
 
+  // ── Preview state ─────────────────────────────────────────────────────────
   if (value && !loadError) {
     return (
       <div className="relative group rounded-xl overflow-hidden border border-gray-200">
@@ -56,12 +79,13 @@ export default function FeaturedImageUploader({ value, onChange }) {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="px-3 py-1.5 bg-white text-gray-800 text-xs font-medium rounded-lg shadow hover:bg-gray-100 transition-colors flex items-center gap-1.5"
+            disabled={uploading}
+            className="px-3 py-1.5 bg-white text-gray-800 text-xs font-medium rounded-lg shadow hover:bg-gray-100 transition-colors flex items-center gap-1.5 disabled:opacity-50"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Replace
+            {uploading ? "Uploading…" : "Replace"}
           </button>
           <button
             type="button"
@@ -74,14 +98,23 @@ export default function FeaturedImageUploader({ value, onChange }) {
             Remove
           </button>
         </div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => applyFile(e.target.files?.[0])} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => applyFile(e.target.files?.[0])}
+        />
+        {uploadErr && (
+          <p className="absolute bottom-0 left-0 right-0 text-xs text-white bg-red-500/90 px-2 py-1">{uploadErr}</p>
+        )}
       </div>
     );
   }
 
+  // ── Upload / drop zone ────────────────────────────────────────────────────
   return (
     <div className="space-y-2">
-      {/* Drop zone */}
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
@@ -90,32 +123,45 @@ export default function FeaturedImageUploader({ value, onChange }) {
         tabIndex={0}
         aria-label="Featured image upload area"
         className={`relative w-full h-36 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 transition-all duration-150 cursor-pointer outline-none focus:border-[#FFAA14] ${
-          isDragging ? "drop-zone-active border-[#FFAA14] bg-[#FFF3D4]" : "border-gray-200 bg-gray-50 hover:border-[#FFAA14]/60 hover:bg-amber-50/40"
-        }`}
-        onClick={() => fileRef.current?.click()}
+          isDragging ? "border-[#FFAA14] bg-[#FFF3D4]" : "border-gray-200 bg-gray-50 hover:border-[#FFAA14]/60 hover:bg-amber-50/40"
+        } ${uploading ? "pointer-events-none opacity-60" : ""}`}
+        onClick={() => !uploading && fileRef.current?.click()}
       >
         <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isDragging ? "bg-[#FFAA14]/20" : "bg-gray-100"}`}>
-          <svg className={`w-5 h-5 ${isDragging ? "text-[#FFAA14]" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
+          {uploading ? (
+            <svg className="w-5 h-5 text-[#FFAA14] animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+          ) : (
+            <svg className={`w-5 h-5 ${isDragging ? "text-[#FFAA14]" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          )}
         </div>
         <div className="text-center">
           <p className="text-sm font-medium text-gray-600">
-            {isDragging ? "Drop to upload" : "Click or drag & drop"}
+            {uploading ? "Uploading…" : isDragging ? "Drop to upload" : "Click or drag & drop"}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WebP up to 10MB</p>
+          <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WebP up to 5MB</p>
         </div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => applyFile(e.target.files?.[0])} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => applyFile(e.target.files?.[0])}
+        />
       </div>
 
-      {/* Divider */}
+      {uploadErr && <p className="text-xs text-red-500">{uploadErr}</p>}
+
       <div className="flex items-center gap-2">
         <div className="flex-1 h-px bg-gray-200" />
         <span className="text-xs text-gray-400 font-medium">or</span>
         <div className="flex-1 h-px bg-gray-200" />
       </div>
 
-      {/* URL input */}
       {mode === "url" ? (
         <div className="flex gap-2">
           <div className="flex-1 relative">
@@ -127,7 +173,10 @@ export default function FeaturedImageUploader({ value, onChange }) {
               type="url"
               value={urlInput}
               onChange={(e) => { setUrlInput(e.target.value); setUrlError(""); }}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyUrl(); } if (e.key === "Escape") setMode("idle"); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); applyUrl(); }
+                if (e.key === "Escape") setMode("idle");
+              }}
               placeholder="https://example.com/image.jpg"
               className={`w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-white ${urlError ? "border-red-400" : "border-gray-300"}`}
             />
@@ -161,7 +210,7 @@ export default function FeaturedImageUploader({ value, onChange }) {
       )}
       {urlError && <p className="text-xs text-red-500">{urlError}</p>}
       {loadError && value && (
-        <p className="text-xs text-red-500">⚠ Could not load image from that URL. Try a different one.</p>
+        <p className="text-xs text-red-500">Could not load image from that URL. Try a different one.</p>
       )}
     </div>
   );

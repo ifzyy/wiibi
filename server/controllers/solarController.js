@@ -26,7 +26,7 @@
 import { randomUUID } from 'crypto';
 import { Op }         from 'sequelize';
 import db             from '../models/index.js';
-import { runSizing, LOCATIONS } from '../services/SolarCalculatorService.js';
+import { runSizing, LOCATIONS, INVERTER_STEPS } from '../services/SolarCalculatorService.js';
 import { buildAllRecommendations } from '../services/SolarMatchingService.js';
 import logger from '../utils/logger.js';
 
@@ -166,6 +166,132 @@ export const calculate = async (req, res) => {
     });
   } catch (err) {
     logger.error('solar calculate error: ' + err.message);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * POST /api/solar/find-systems
+ *
+ * The stripped-down calculator flow: appliances + location + backup hours +
+ * battery type in, a list of CAPABLE store products out. The client navigates
+ * to /store?recommended=<ids> so the customer shops the matches directly.
+ *
+ * "Capable" per component type (recommended-tier sizing):
+ *   inverter          → solar_specs.kva    >= engineering minimum kVA
+ *   battery           → solar_specs.chemistry matches the selected type
+ *   solar-panel       → has a positive watts rating (quantity scales)
+ *   charge-controller → solar_specs.ampere >= required ampere
+ *
+ * Inverters are ordered first (closest capable size first) since they define
+ * the system; batteries, panels, and controllers follow.
+ *
+ * Body: { appliances: [{ id, qty, hours }], location, autonomyHours,
+ *         batteryType, criticalLoadsOnly? }
+ */
+const COMPONENT_ORDER = ['inverter', 'battery', 'solar-panel', 'charge-controller'];
+
+export const findSystems = async (req, res) => {
+  try {
+    const {
+      appliances: inputAppliances,
+      location,
+      autonomyHours,
+      batteryType,
+      criticalLoadsOnly = false,
+    } = req.body;
+
+    const [appliances, settings] = await Promise.all([
+      resolveAppliances(inputAppliances, criticalLoadsOnly),
+      loadSettings(),
+    ]);
+
+    if (!appliances.length) {
+      return res.status(400).json({ message: 'No valid appliances after resolving inputs' });
+    }
+
+    const sizing = runSizing({ appliances, location, autonomyHours, batteryType }, settings);
+    const { specs } = sizing.tiers.find(t => t.tier === 'recommended');
+
+    const candidates = await db.Product.findAll({
+      where: {
+        is_visible:           true,
+        solar_component_type: { [Op.in]: COMPONENT_ORDER },
+      },
+      attributes: ['id', 'solar_component_type', 'solar_specs', 'stock', 'price'],
+    });
+
+    const wantsLithium = batteryType === 'lithium';
+    const specOf       = (p) => p.solar_specs ?? {};
+
+    const byType = Object.fromEntries(COMPONENT_ORDER.map(t => [t, []]));
+    for (const p of candidates) byType[p.solar_component_type]?.push(p);
+
+    // ── Fallback ladder ───────────────────────────────────────────────────
+    // 1. Strictly capable products → use them all.
+    // 2. None capable but the type IS in the catalog → closest available
+    //    (largest spec first, top 5) and mark coverage 'partial' so the
+    //    client can say "our team will confirm sizing" instead of dead-ending.
+    // 3. Type not in the catalog at all → skip it; don't block the others.
+    let coverage = 'full';
+
+    const inStockFirstCheapest = (arr) => [...arr].sort((a, b) => {
+      const stockDiff = (b.stock > 0 ? 1 : 0) - (a.stock > 0 ? 1 : 0);
+      if (stockDiff !== 0) return stockDiff;
+      // Cheapest first — for capable inverters this is also closest size
+      return Number(a.price) - Number(b.price);
+    });
+
+    const selectType = (type, capableFn, closestSortFn) => {
+      const pool = byType[type];
+      if (!pool.length) return [];
+      const capable = pool.filter(capableFn);
+      if (capable.length) return inStockFirstCheapest(capable);
+      coverage = 'partial';
+      return [...pool].sort(closestSortFn).slice(0, 5);
+    };
+
+    const selected = [
+      ...selectType('inverter',
+        p => Number(specOf(p).kva ?? 0) >= specs.inverter.minKva,
+        (a, b) => Number(specOf(b).kva ?? 0) - Number(specOf(a).kva ?? 0)),
+      // 'tubular' and 'dry-cell' are both non-lithium — interchangeable.
+      // Capacity scales with quantity, so chemistry is the hard constraint;
+      // the fallback offers the other chemistry rather than nothing.
+      ...selectType('battery',
+        p => ((specOf(p).chemistry ?? '') === 'lithium') === wantsLithium,
+        (a, b) => Number(specOf(b).ah ?? 0) - Number(specOf(a).ah ?? 0)),
+      ...selectType('solar-panel',
+        p => Number(specOf(p).watts ?? 0) > 0,
+        (a, b) => Number(specOf(b).watts ?? 0) - Number(specOf(a).watts ?? 0)),
+      ...selectType('charge-controller',
+        p => Number(specOf(p).ampere ?? 0) >= specs.controller.ampere,
+        (a, b) => Number(specOf(b).ampere ?? 0) - Number(specOf(a).ampere ?? 0)),
+    ].slice(0, 60); // keep the /store?recommended= URL a sane length
+
+    if (!selected.length) coverage = 'none';
+
+    return res.json({
+      ids: selected.map(p => p.id),
+      coverage,
+      counts: selected.reduce((acc, p) => {
+        acc[p.solar_component_type] = (acc[p.solar_component_type] ?? 0) + 1;
+        return acc;
+      }, {}),
+      metrics: {
+        dailyWh:        sizing.metrics.dailyWh,
+        peakWatts:      sizing.metrics.peakWatts,
+        requiredKva:    specs.inverter.minKva,
+        recommendedKva: specs.inverter.kva,
+        panelCount:     specs.panels.count,
+        batteryUnits:   specs.battery.units,
+        location,
+        autonomyHours,
+        batteryType,
+      },
+    });
+  } catch (err) {
+    logger.error('findSystems error: ' + err.message);
     return res.status(500).json({ message: 'Server error' });
   }
 };
@@ -470,6 +596,94 @@ export const adminDeleteAppliance = async (req, res) => {
     return res.json({ message: 'Appliance deleted' });
   } catch (err) {
     logger.error('adminDeleteAppliance error: ' + err.message);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// ============================================================================
+// ADMIN — CATALOG COVERAGE
+// ============================================================================
+
+/**
+ * GET /api/admin/solar/coverage
+ *
+ * Reports how well the product catalog covers the loads the calculator can
+ * recommend, so the team can fix gaps BEFORE customers hit fallback results.
+ *
+ * Returns per component type: tagged count, in-stock count, max spec; plus a
+ * plain-English warnings[] list (shown as a banner in the admin catalog).
+ */
+export const adminGetCoverage = async (req, res) => {
+  try {
+    const products = await db.Product.findAll({
+      where: {
+        solar_component_type: { [Op.in]: COMPONENT_ORDER },
+        is_visible:           true,
+      },
+      attributes: ['id', 'solar_component_type', 'solar_specs', 'stock'],
+    });
+
+    const group   = (type) => products.filter(p => p.solar_component_type === type);
+    const maxSpec = (pool, key) => pool.reduce((m, p) => Math.max(m, Number(p.solar_specs?.[key] ?? 0)), 0);
+
+    const inverters   = group('inverter');
+    const batteries   = group('battery');
+    const panels      = group('solar-panel');
+    const controllers = group('charge-controller');
+
+    const inStock        = (pool) => pool.filter(p => p.stock > 0);
+    const chemistries    = [...new Set(batteries.map(p => p.solar_specs?.chemistry).filter(Boolean))];
+    const maxKvaInStock  = maxSpec(inStock(inverters), 'kva');
+
+    const summary = {
+      inverter: {
+        tagged: inverters.length, inStock: inStock(inverters).length,
+        maxKva: maxSpec(inverters, 'kva'), maxKvaInStock,
+      },
+      battery: {
+        tagged: batteries.length, inStock: inStock(batteries).length,
+        maxAh: maxSpec(batteries, 'ah'), chemistries,
+      },
+      'solar-panel': {
+        tagged: panels.length, inStock: inStock(panels).length,
+        maxWatts: maxSpec(panels, 'watts'),
+      },
+      'charge-controller': {
+        tagged: controllers.length, inStock: inStock(controllers).length,
+        maxAmpere: maxSpec(controllers, 'ampere'),
+      },
+    };
+
+    const warnings = [];
+
+    if (!inverters.length) {
+      warnings.push('No inverters are tagged for the solar calculator — results will show no inverters. Tag products under Solar Matching in the product form.');
+    } else if (maxKvaInStock <= 0) {
+      warnings.push('All calculator-tagged inverters are out of stock.');
+    } else {
+      const uncovered = INVERTER_STEPS.filter(s => s > maxKvaInStock);
+      if (uncovered.length) {
+        warnings.push(`No in-stock inverter above ${maxKvaInStock}kVA — customers needing ${uncovered.join(' / ')}kVA systems will see "closest available" fallback results.`);
+      }
+    }
+
+    if (!batteries.length) {
+      warnings.push('No batteries are tagged for the solar calculator.');
+    } else {
+      if (!chemistries.includes('lithium')) {
+        warnings.push('No lithium batteries tagged — customers choosing lithium will see other chemistries as fallback.');
+      }
+      if (!chemistries.some(c => c && c !== 'lithium')) {
+        warnings.push('No tubular/dry-cell batteries tagged — customers choosing those will see lithium as fallback.');
+      }
+    }
+
+    if (!panels.length)      warnings.push('No solar panels are tagged for the solar calculator.');
+    if (!controllers.length) warnings.push('No charge controllers are tagged for the solar calculator.');
+
+    return res.json({ summary, warnings });
+  } catch (err) {
+    logger.error('adminGetCoverage error: ' + err.message);
     return res.status(500).json({ message: 'Server error' });
   }
 };

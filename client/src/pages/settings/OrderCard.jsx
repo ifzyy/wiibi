@@ -1,18 +1,19 @@
-import {
-  Package,
-} from 'lucide-react';
+import { Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../utils/api.js';
+import usePublicSettings from '../../hooks/usePublicSettings.js';
 
 const OrderCard = ({ order }) => {
   const navigate = useNavigate();
+  const settings = usePublicSettings();
 
   const statusConfig = {
-    pending: { label: 'Order Placed', color: 'bg-amber-50 text-amber-500' },
+    pending:    { label: 'Order Placed',       color: 'bg-amber-50 text-amber-500' },
     processing: { label: 'Ready for Shipment', color: 'bg-amber-50 text-amber-500' },
-    shipped: { label: 'In transit', color: 'bg-amber-50 text-amber-500' },
-    delivered: { label: 'Delivered', color: 'bg-green-50 text-green-500' },
-    failed: { label: 'Failed', color: 'bg-red-50 text-red-500' },
+    shipped:    { label: 'Out for Delivery',   color: 'bg-amber-50 text-amber-500' },
+    in_transit: { label: 'In Transit',         color: 'bg-amber-50 text-amber-500' },
+    delivered:  { label: 'Delivered',          color: 'bg-green-50 text-green-500' },
+    cancelled:  { label: 'Cancelled',          color: 'bg-red-50 text-red-500'     },
+    failed:     { label: 'Failed',             color: 'bg-red-50 text-red-500'     },
   };
 
   const config =
@@ -20,6 +21,17 @@ const OrderCard = ({ order }) => {
       label: order.status,
       color: 'bg-gray-50 text-gray-500',
     };
+
+  // Route: From = admin-set dispatch location (Settings), To = the order's own
+  // shipping address. Street-level, not just city — most customers are in the
+  // same city, so "city, state" made every order look identical.
+  const from = settings.dispatch_location || 'Ojodu Berger, Lagos';
+  const addr = order.shippingAddress ?? {};
+  const to   = [addr.addressLine1, addr.city].filter(Boolean).join(', ')
+            || [addr.city, addr.state].filter(Boolean).join(', ')
+            || '—';
+
+  const isCancelled = order.status === 'cancelled';
 
   return (
     <div
@@ -35,25 +47,28 @@ const OrderCard = ({ order }) => {
               Order ID
             </p>
             <p className="text-sm font-black text-gray-900 whitespace-nowrap">
-              {order.orderNumber || 'ORD-MMMWSH2D-IMH6'}
+              {order.orderNumber || order.id}
             </p>
             {order.status === 'failed' && (
               <span className="text-red-500 text-xs ml-2">●</span>
             )}
           </div>
 
-          {/* Delivery Date */}
-          <div className="flex items-center">
-            <p className="text-[10px] font-bold text-gray-400 uppercase w-24">
-              Delivery Date
-            </p>
-            <p className="text-sm font-bold text-gray-900">
-              {new Date(order.deliveryDate || order.createdAt).toLocaleDateString(
-                'en-GB',
-                { day: 'numeric', month: 'short', year: 'numeric' }
-              )}
-            </p>
-          </div>
+          {/* Estimated delivery — admin-editable; meaningless once cancelled */}
+          {!isCancelled && (
+            <div className="flex items-center">
+              <p className="text-[10px] font-bold text-gray-400 uppercase w-24">
+                Est. Delivery
+              </p>
+              <p className="text-sm font-bold text-gray-900">
+                {order.expectedDelivery
+                  ? new Date(order.expectedDelivery).toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short', year: 'numeric',
+                    })
+                  : <span className="text-gray-400 font-medium">To be confirmed</span>}
+              </p>
+            </div>
+          )}
 
           {/* Status */}
           <div className="flex items-center">
@@ -84,7 +99,7 @@ const OrderCard = ({ order }) => {
               From
             </p>
             <p className="text-[11px] font-black text-gray-900 truncate max-w-[120px]">
-              Ojodu Berger
+              {from}
             </p>
           </div>
 
@@ -103,7 +118,7 @@ const OrderCard = ({ order }) => {
               To
             </p>
             <p className="text-[11px] font-black text-gray-900 truncate max-w-[120px]">
-              Lekki, Lagos
+              {to}
             </p>
           </div>
 

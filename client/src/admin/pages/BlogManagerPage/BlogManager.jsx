@@ -13,7 +13,7 @@ export default function BlogManager() {
   // Fetch category list from CMS once — feeds the BlogForm dropdown
   useEffect(() => {
     axios
-      .get("http://localhost:5000/api/public/pages/blog")
+      .get(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/public/pages/blog`)
       .then(({ data }) => {
         const section = data?.sections?.find((s) => s.type === "blog_grid");
         const cats = section?.content?.categories ?? [];

@@ -5,6 +5,7 @@ import StatusBadge from "./components/StatusBadge.jsx";
 import BlogInfoView from "./BlogInfoView.jsx";
 import { blogMockService } from "./mock/blogMockService.js";
 import { formatDate } from "./utils/formatDate.js";
+import SafeHtml from "../../../components/SafeHtml.jsx";
 
 // Category tabs derived from tags or a fixed list
 const CATEGORIES = ["All", "Education", "Product Guides", "How-Tos", "Installation", "Case Studies", "Energy News"];
@@ -390,9 +391,9 @@ export default function BlogListView({ onEdit, onNew }) {
                     {previewBlog.excerpt}
                   </p>
                 )}
-                <div
+                <SafeHtml
                   className="text-sm text-gray-700 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: previewBlog.content }}
+                  html={previewBlog.content}
                 />
               </div>
             </div>

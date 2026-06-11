@@ -7,8 +7,7 @@ import {
   deleteSection, reorderSections, assignMediaToSection,
 } from '../controllers/adminController.js';
 import upload from '../middleware/upload.js';
-import { uploadFiles, attachMediaToProduct } from '../controllers/uploadController.js';
-import { processImage } from '../middleware/upload.js';
+import { uploadFiles, attachMediaToProduct, attachMediaToProject } from '../controllers/uploadController.js';
 
 const router = express.Router();
 router.use(authenticate);
@@ -32,7 +31,8 @@ router.post('/sections/reorder',             reorderSections);
 router.patch('/sections/:sectionId/media',   assignMediaToSection);
 
 // ── Upload / media ────────────────────────────────────────────────────────────
-router.post('/products/:id/media/attach', attachMediaToProduct);
-router.post('/upload', upload.array('images', 10), processImage, uploadFiles);
+router.post('/products/:id/media/attach',  attachMediaToProduct);
+router.post('/projects/:id/media/attach',  attachMediaToProject);
+router.post('/upload', upload.array('images', 10), uploadFiles);
 
 export default router;

@@ -43,7 +43,14 @@ const ACCESS_COOKIE = {
   httpOnly: true,
   secure:   IS_PROD,
   sameSite: 'strict',
-  maxAge:   15 * 60 * 1000,
+  // Cookie lifetime intentionally matches the REFRESH window, not the 15-min
+  // JWT validity. If the cookie died with the JWT, a returning browser would
+  // send no token at all → 401 NO_TOKEN → the client never attempts a silent
+  // refresh and the session appears not to persist. With the cookie still
+  // present, the server answers TOKEN_EXPIRED and the interceptor refreshes
+  // seamlessly. The JWT inside still expires after 15 minutes — security is
+  // unchanged; only the cookie's shelf life differs.
+  maxAge:   7 * 24 * 60 * 60 * 1000,
   path:     '/',
 };
 

@@ -104,8 +104,21 @@ export const requireAdmin = (req, res, next) => {
   next();
 };
 
-// ── protect — dev passthrough (REMOVE before production) ────────────────────
-export const protect = (req, res, next) => {
-  req.user = { id: null, role: 'admin', email: 'dev@local' };
+export const optionalAuthenticate = async (req, _res, next) => {
+  try {
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) return next();
+
+    const token   = header.split(' ')[1];
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await db.User.findByPk(payload.id, {
+      attributes: ['id', 'role', 'isActive', 'email'],
+    });
+
+    if (user?.isActive) req.user = user;
+  } catch {
+    // Silently ignore — expired or invalid token doesn't block the request
+  }
   next();
 };

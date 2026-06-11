@@ -17,6 +17,7 @@ import {
   confirmReturn,
   getReturnRequests,
   getPendingManualRefunds,
+  getAllRefunds,
 } from '../services/ReturnService.js';
 
 // Re-exported so returnRoutes.js only needs to import from one controller file
@@ -49,6 +50,21 @@ export const handleConfirmReturn = asyncHandler(async (req, res) => {
     : 'Return confirmed and refund initiated';
 
   return sendSuccess(res, result, message);
+});
+
+const REFUND_STATUSES = ['pending', 'completed', 'failed', 'manual_required'];
+
+export const handleGetAllRefunds = asyncHandler(async (req, res) => {
+  const page   = parseInt(req.query.page  || '1');
+  const limit  = Math.min(parseInt(req.query.limit || '20'), 100);
+  const status = REFUND_STATUSES.includes(req.query.status) ? req.query.status : null;
+
+  const result = await getAllRefunds({ page, limit, status });
+  return sendSuccess(res, {
+    refunds:    result.refunds,
+    counts:     result.counts,
+    pagination: result.pagination,
+  });
 });
 
 export const handleGetManualRefunds = asyncHandler(async (req, res) => {

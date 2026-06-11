@@ -113,24 +113,40 @@ export const removePassword = async (userId, currentPassword) => {
 // ── Token rotation ────────────────────────────────────────────────────────────
 
 export const refreshAccessToken = async (refreshToken, ipAddress) => {
-  const payload   = verifyRefreshToken(refreshToken);
+  // Signature/expiry check first — a forged or tampered token never reaches the DB.
+  verifyRefreshToken(refreshToken);
   const tokenHash = hashToken(refreshToken);
 
-  const stored = await db.RefreshToken.findOne({ where: { tokenHash, isRevoked: false } });
+  // Look the token up regardless of revoked state so we can detect REUSE.
+  const stored = await db.RefreshToken.findOne({ where: { tokenHash } });
 
-  if (!stored || stored.expiresAt < new Date()) {
-    throw new AuthError('Invalid or expired refresh token');
+  if (!stored) {
+    // Validly signed but unknown to us — treat as invalid (e.g. logged out).
+    throw new AuthError('Invalid refresh token');
   }
 
-  if (stored.userId !== payload.id) {
-    await db.RefreshToken.update({ isRevoked: true }, { where: { userId: stored.userId } });
-    logger.warn('Refresh token reuse detected — all sessions revoked for user ' + payload.id);
+  // REUSE DETECTION: a token that was already rotated out (isRevoked) is being
+  // replayed. That is the signature of a stolen token, so revoke the whole
+  // family — the legitimate user will simply log in again. The previous code
+  // queried `isRevoked: false`, so a revoked-token replay just returned null
+  // and this protection never actually fired.
+  if (stored.isRevoked) {
+    await db.RefreshToken.update(
+      { isRevoked: true },
+      { where: { userId: stored.userId, isRevoked: false } }
+    );
+    logger.warn('Refresh token reuse detected — all sessions revoked for user ' + stored.userId);
     throw new AuthError('Security violation detected. Please log in again.');
   }
 
+  if (stored.expiresAt < new Date()) {
+    throw new AuthError('Refresh token expired');
+  }
+
+  // Rotate: revoke this token, issue a fresh pair.
   await stored.update({ isRevoked: true });
 
-  const user = await db.User.findByPk(payload.id);
+  const user = await db.User.findByPk(stored.userId);
   if (!user || !user.isActive) throw new AuthError('Account not found or deactivated');
 
   return issueTokenPair(user, ipAddress, null);

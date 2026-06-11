@@ -2,7 +2,7 @@ import express from 'express';
 
 const router = express.Router();
 
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, optionalAuth } from '../middleware/auth.js';
 import formAdmin from '../controllers/formAdminController.js';
 import submissions from '../controllers/submissionController.js';
 import { createFormRules, updateFormRules, fieldRules } from '../middleware/formValidator.js';
@@ -36,8 +36,12 @@ router.patch ('/admin/submissions/:id/status', adminGuard, submissions.updateSub
 router.delete('/admin/submissions/:id',      adminGuard, submissions.deleteSubmission);
 
 // ════════════════════════════════════════════════
-// PUBLIC — authenticated users submit forms
+// PUBLIC — no auth required
 // ════════════════════════════════════════════════
-router.post('/forms/:formId/submit', authenticate, submissions.submitForm);
+router.get ('/forms/:id',              formAdmin.getForm);
+// PUBLIC submit — optionalAuth stamps submitted_by when logged in but never
+// blocks guests (the whole point of a public request/contact form). Was
+// `authenticate`, which silently broke guest submissions.
+router.post('/forms/:formId/submit',   optionalAuth, submissions.submitForm);
 
 export default router;

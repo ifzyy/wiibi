@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import SafeHtml from "../components/SafeHtml.jsx";
 
-const API_BASE = "http://localhost:5000/api";
+// Use the configured API base — hardcoding localhost breaks the production build.
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const ProjectDetailPage = () => {
   const { slug } = useParams();
@@ -186,9 +188,9 @@ function Section({ title, content, last = false }) {
   return (
     <section className={`py-12 ${last ? "border-t border-stone-100" : "border-b border-stone-100"}`}>
       <h2 className="text-xl font-black text-[#ffaa14] mb-5">{title}</h2>
-      <div
+      <SafeHtml
         className="rich-text text-gray-600 text-base leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: content }}
+        html={content}
       />
     </section>
   );

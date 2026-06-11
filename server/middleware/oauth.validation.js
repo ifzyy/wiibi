@@ -10,6 +10,10 @@ export const oauthSchemas = {
       'any.required': 'Google credential is required',
       'string.empty': 'Google credential cannot be empty',
     }),
+    // Sent alongside auth-codes from the redirect flow — the controller passes
+    // it to exchangeGoogleCode(). Must match a redirect URI registered in the
+    // Google console; Google rejects mismatches, we just need to let it through.
+    redirectUri: Joi.string().uri().optional().allow(null, ''),
   }),
 
   apple: Joi.object({

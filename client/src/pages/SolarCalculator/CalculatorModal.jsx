@@ -1,22 +1,44 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+/**
+ * CalculatorModal — stripped-down solar sizing flow.
+ *
+ * Step 1: pick appliances (qty per item, optional essential-loads-only toggle)
+ * Step 2: location + backup hours + battery type
+ * Then  : POST /api/solar/find-systems → navigate to /store?recommended=<ids>
+ *         so the store shows every inverter/battery/panel/controller capable
+ *         of serving the entered load.
+ *
+ * The previous 4-step flow (tier cards, ROI, quote/lead form) was removed on
+ * purpose — the store IS the results screen now.
+ *
+ * Lead capture (re-added, lighter than the old flow):
+ *  - "Request a quote" — optional form (name/phone/email) reachable from
+ *    step 2 and from the no-systems banner → POST /api/solar/leads
+ *    (origin request_quote). Shows in the admin Leads page.
+ *  - add_to_cart — inputs are saved to sessionStorage on "Show capable
+ *    systems"; StorePage records a silent lead when a recommended product
+ *    is added to cart (see utils/solarLead.js).
+ */
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
-  X, ChevronDown, ChevronUp, ChevronRight, ArrowRight,
-  Plus, Minus, Zap, Battery, Sun, TrendingDown,
-  CheckCircle, Loader2, AlertCircle, ShoppingCart,
-  AlertTriangle, Package,
+  X, ChevronDown, ChevronUp, ChevronRight,
+  Plus, Minus, Loader2, AlertCircle, Store, Phone, CheckCircle2,
 } from 'lucide-react';
+import { saveCalcContext, submitSolarLead } from '../../utils/solarLead.js';
 
 // ─── API client ───────────────────────────────────────────────────────────────
+// Request paths in this file include the `/api` prefix, so the baseURL must be
+// the ORIGIN without `/api`. VITE_API_URL ends in `/api` — strip it.
+const ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL:         ORIGIN,
+  withCredentials: true,
 });
 
 API.interceptors.request.use((config) => {
   const guest = localStorage.getItem('guestToken');
-  const auth  = localStorage.getItem('authToken');
   if (guest) config.headers['x-guest-token'] = guest;
-  if (auth)  config.headers['Authorization']  = `Bearer ${auth}`;
   return config;
 });
 
@@ -29,28 +51,10 @@ const AUTONOMY_OPTIONS = [
 ];
 
 const BATTERY_OPTIONS = [
-  { value: 'lithium',  label: 'Lithium',     note: 'Recommended — longer lifespan, deeper discharge, lighter' },
-  { value: 'tubular',  label: 'Tubular',      note: 'Proven, budget-friendly, good for high-cycle use'         },
-  { value: 'dry-cell', label: 'Dry Cell',     note: 'Basic and affordable — shorter lifespan'                  },
+  { value: 'lithium',  label: 'Lithium',  note: 'Recommended — longer lifespan, deeper discharge, lighter' },
+  { value: 'tubular',  label: 'Tubular',  note: 'Proven, budget-friendly, good for high-cycle use'         },
+  { value: 'dry-cell', label: 'Dry Cell', note: 'Basic and affordable — shorter lifespan'                  },
 ];
-
-const HOME_OPTIONS = [
-  { value: 'apartment', label: 'Apartment' },
-  { value: 'bungalow',  label: 'Bungalow'  },
-  { value: 'duplex',    label: 'Duplex'     },
-  { value: 'office',    label: 'Office'     },
-  { value: 'other',     label: 'Other'      },
-];
-
-const TIER_STYLE = {
-  sufficient:  { accent: '#6B7280', bg: 'bg-gray-50',    border: 'border-gray-200',    badge: 'bg-gray-100 text-gray-600'          },
-  recommended: { accent: '#FFAA14', bg: 'bg-amber-50',   border: 'border-[#FFAA14]',   badge: 'bg-amber-50 text-[#FFAA14] border border-amber-200' },
-  overkill:    { accent: '#1A1102', bg: 'bg-gray-800/5', border: 'border-gray-800',    badge: 'bg-gray-800 text-white'             },
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmt    = (n) => '₦' + Math.round(n).toLocaleString('en-NG');
-const fmtRange = (min, max) => `${fmt(min)} — ${fmt(max)}`;
 
 // ─── Step 1 — Appliance Picker ────────────────────────────────────────────────
 function Step1({ selections, onChange, applianceData, loading, criticalOnly, onCriticalToggle }) {
@@ -172,11 +176,11 @@ function Step1({ selections, onChange, applianceData, loading, criticalOnly, onC
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button onClick={() => adjust(item, -1)} className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#FFAA14] hover:text-[#FFAA14] transition-colors">
+                          <button onClick={() => adjust(item, -1)} aria-label={`Remove one ${item.name}`} className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#FFAA14] hover:text-[#FFAA14] transition-colors">
                             <Minus size={12} />
                           </button>
                           <span className="w-5 text-center text-sm font-bold text-gray-800">{qty}</span>
-                          <button onClick={() => adjust(item, 1)} className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#FFAA14] hover:text-[#FFAA14] transition-colors">
+                          <button onClick={() => adjust(item, 1)} aria-label={`Add one ${item.name}`} className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#FFAA14] hover:text-[#FFAA14] transition-colors">
                             <Plus size={12} />
                           </button>
                         </div>
@@ -261,25 +265,6 @@ function Step2({ config, onChange, locations }) {
         </div>
       </div>
 
-      {/* Home type */}
-      <div>
-        <label className="block text-sm font-bold text-gray-700 mb-2">
-          Property Type <span className="text-gray-400 font-normal">(optional)</span>
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          {HOME_OPTIONS.map(opt => (
-            <button key={opt.value} onClick={() => onChange('homeType', config.homeType === opt.value ? '' : opt.value)}
-              className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                config.homeType === opt.value
-                  ? 'bg-[#FFAA14] border-[#FFAA14] text-white'
-                  : 'bg-white border-gray-200 text-gray-600 hover:border-[#FFAA14]'
-              }`}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Summary */}
       <div className="bg-amber-50/60 border border-amber-100 rounded-2xl p-4">
         <p className="text-[11px] uppercase tracking-widest font-bold text-[#FFAA14] mb-3">Summary</p>
@@ -288,7 +273,6 @@ function Step2({ config, onChange, locations }) {
             ['Backup', `${config.autonomyHours} hours`],
             ['Location', config.location],
             ['Battery', BATTERY_OPTIONS.find(b => b.value === config.batteryType)?.label ?? '—'],
-            ['Property', HOME_OPTIONS.find(h => h.value === config.homeType)?.label ?? 'Not specified'],
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between">
               <span className="text-gray-500">{label}</span>
@@ -301,344 +285,9 @@ function Step2({ config, onChange, locations }) {
   );
 }
 
-// ─── Component line item ──────────────────────────────────────────────────────
-function ComponentRow({ comp }) {
-  if (!comp.found) {
-    return (
-      <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
-        <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
-          <Package size={13} className="text-gray-400" />
-        </div>
-        <div>
-          <p className="text-[12px] font-bold text-gray-500">{comp.displayLabel}</p>
-          <p className="text-[11px] text-gray-400 italic">Not in catalog yet</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-      <div className="flex items-center gap-3">
-        {comp.image ? (
-          <img src={comp.image} alt={comp.name} className="w-8 h-8 rounded-xl object-cover flex-shrink-0" />
-        ) : (
-          <div className="w-8 h-8 bg-amber-50 rounded-xl flex items-center justify-center flex-shrink-0">
-            <Package size={13} className="text-[#FFAA14]" />
-          </div>
-        )}
-        <div>
-          <p className="text-[12px] font-bold text-gray-800 leading-tight">
-            {comp.qty > 1 && <span className="text-[#FFAA14] mr-1">×{comp.qty}</span>}
-            {comp.name}
-          </p>
-          {comp.brand && <p className="text-[10px] text-gray-400">{comp.brand}</p>}
-
-          {/* Stock notice */}
-          {comp.isOutOfStock && (
-            <div className="flex items-center gap-1 mt-0.5">
-              <AlertTriangle size={10} className="text-amber-500" />
-              <p className="text-[10px] text-amber-500">Out of stock — team will confirm</p>
-            </div>
-          )}
-          {comp.isUpsell && (
-            <div className="flex items-center gap-1 mt-0.5">
-              <CheckCircle size={10} className="text-green-500" />
-              <p className="text-[10px] text-green-600">Upgraded to next available size</p>
-            </div>
-          )}
-        </div>
-      </div>
-      <p className="text-[12px] font-black text-[#1A1102] flex-shrink-0 ml-2">{fmt(comp.lineTotal)}</p>
-    </div>
-  );
-}
-
-// ─── Recommendation Card ──────────────────────────────────────────────────────
-function RecommendationCard({ rec, isSelected, onSelect, onAddToCart, addingToCart }) {
-  const [expanded, setExpanded] = useState(false);
-  const style = TIER_STYLE[rec.tier];
-
-  return (
-    <div
-      className={`rounded-3xl border-2 overflow-hidden transition-all duration-200 cursor-pointer ${
-        isSelected ? style.border + ' shadow-lg' : 'border-gray-100 hover:border-gray-200'
-      }`}
-      onClick={() => onSelect(rec.tier)}
-    >
-      {/* Card header */}
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${style.badge}`}>
-            {rec.isRecommended ? '★ Recommended' : rec.label}
-          </span>
-          {isSelected && (
-            <div className="w-5 h-5 rounded-full bg-[#FFAA14] flex items-center justify-center flex-shrink-0">
-              <CheckCircle size={12} className="text-white" />
-            </div>
-          )}
-        </div>
-
-        <p className="text-[12px] text-gray-400 leading-relaxed mb-4">{rec.description}</p>
-
-        {/* Quick spec pills */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {[
-            { icon: <Sun     size={13} className="text-[#FFAA14] mx-auto mb-1" />, label: 'Panels',    value: `${rec.specs.panels.count}×`      },
-            { icon: <Battery size={13} className="text-[#FFAA14] mx-auto mb-1" />, label: 'Batteries', value: `${rec.specs.battery.units}×`     },
-            { icon: <Zap     size={13} className="text-[#FFAA14] mx-auto mb-1" />, label: 'Inverter',  value: `${rec.specs.inverter.kva}kVA`    },
-          ].map(s => (
-            <div key={s.label} className="bg-gray-50 rounded-xl p-3 text-center">
-              {s.icon}
-              <p className="text-[10px] text-gray-400 mb-0.5">{s.label}</p>
-              <p className="text-sm font-black text-[#1A1102]">{s.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Price + stock status */}
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-0.5">Store Price</p>
-            <p className="text-2xl font-black text-[#1A1102]">{fmt(rec.productTotal)}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">Estimate range: {fmtRange(rec.costMin, rec.costMax)}</p>
-          </div>
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-full flex-shrink-0 ml-2 ${
-            rec.overallStockStatus === 'available' ? 'bg-green-50 text-green-600'
-            : rec.overallStockStatus === 'partial'  ? 'bg-amber-50 text-amber-600'
-            : 'bg-gray-100 text-gray-500'
-          }`}>
-            {rec.overallStockStatus === 'available' ? 'In stock'
-             : rec.overallStockStatus === 'partial'  ? 'Partial stock'
-             : 'On order'}
-          </span>
-        </div>
-      </div>
-
-      {/* Expandable components */}
-      <button
-        onClick={e => { e.stopPropagation(); setExpanded(p => !p); }}
-        className="w-full flex items-center justify-between px-5 py-3 border-t border-gray-50 text-[11px] font-bold text-gray-500 hover:bg-gray-50 transition-colors"
-      >
-        <span>View component breakdown</span>
-        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-      </button>
-
-      {expanded && (
-        <div className="px-5 pb-4" onClick={e => e.stopPropagation()}>
-          {rec.components.map((comp, i) => (
-            <ComponentRow key={i} comp={comp} />
-          ))}
-          <div className="pt-3 space-y-1 border-t border-gray-100 mt-2">
-            <div className="flex justify-between text-[11px]">
-              <span className="text-gray-400">Subtotal</span>
-              <span className="font-bold text-gray-700">{fmt(rec.subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-gray-400">VAT (7.5%)</span>
-              <span className="font-bold text-gray-700">{fmt(rec.vatAmount)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-black pt-1 border-t border-gray-100">
-              <span>Total</span>
-              <span>{fmt(rec.productTotal)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ROI — only on selected */}
-      {isSelected && (
-        <div className="mx-5 mb-4 bg-amber-50/60 border border-amber-100 rounded-2xl p-4" onClick={e => e.stopPropagation()}>
-          <p className="text-[10px] uppercase tracking-widest font-bold text-[#FFAA14] mb-2">vs Generator</p>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: 'Grid savings/yr', value: fmt(rec.annualGridSavings) },
-              { label: 'Fuel savings/yr', value: fmt(rec.annualFuelSavings) },
-              { label: 'Break-even',      value: `${rec.paybackYears} yrs`  },
-            ].map(m => (
-              <div key={m.label}>
-                <p className="text-[10px] text-gray-400">{m.label}</p>
-                <p className="text-xs font-black text-[#1A1102]">{m.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* CTAs — only on selected */}
-      {isSelected && (
-        <div className="px-5 pb-5 space-y-2" onClick={e => e.stopPropagation()}>
-          {/* Add to cart */}
-          <button
-            onClick={() => onAddToCart(rec, 'add_to_cart')}
-            disabled={addingToCart || rec.overallStockStatus === 'unavailable'}
-            className={`w-full py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all ${
-              addingToCart
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-[#1A1102] text-white hover:bg-black'
-            }`}
-          >
-            {addingToCart
-              ? <><Loader2 size={14} className="animate-spin" /> Adding...</>
-              : <><ShoppingCart size={14} /> Add to cart</>
-            }
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Step 3 — Results ─────────────────────────────────────────────────────────
-function Step3({ result, onAddToCart, addingToCart, onRequestQuote }) {
-  const [selectedTier, setSelectedTier] = useState('recommended');
-  const recs = result?.recommendations ?? [];
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-2xl font-black text-[#1A1102] leading-tight">Your Recommendations</h2>
-        <p className="text-sm text-gray-400 mt-1">
-          {result.metrics.dailyWh.toLocaleString()}Wh/day · {result.metrics.location} · {result.metrics.autonomyHours}h backup
-        </p>
-      </div>
-
-      {/* Load metrics strip */}
-      <div className="grid grid-cols-3 gap-2">
-        {[
-          { label: 'Daily load',  value: `${(result.metrics.dailyWh / 1000).toFixed(2)}kWh`  },
-          { label: 'Peak load',   value: `${(result.metrics.peakWatts / 1000).toFixed(1)}kW`  },
-          { label: 'Sun hours',   value: `${result.metrics.peakSunHours}h/day`                 },
-        ].map(m => (
-          <div key={m.label} className="bg-gray-50 rounded-2xl p-3 text-center">
-            <p className="text-[10px] text-gray-400 mb-1">{m.label}</p>
-            <p className="text-sm font-black text-[#1A1102]">{m.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Three recommendation cards */}
-      <div className="space-y-3">
-        {recs.map(rec => (
-          <RecommendationCard
-            key={rec.tier}
-            rec={rec}
-            isSelected={selectedTier === rec.tier}
-            onSelect={setSelectedTier}
-            onAddToCart={onAddToCart}
-            addingToCart={addingToCart}
-          />
-        ))}
-      </div>
-
-      {/* Request quote CTA */}
-      <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-bold text-gray-800">Want a detailed quote?</p>
-          <p className="text-[11px] text-gray-400">Our team reviews your load and sends a proposal</p>
-        </div>
-        <button
-          onClick={() => onRequestQuote(recs.find(r => r.tier === selectedTier) ?? recs[1])}
-          className="flex-shrink-0 flex items-center gap-1.5 bg-[#FFAA14] text-white text-xs font-black px-4 py-2.5 rounded-xl hover:bg-[#e69912] transition-colors"
-        >
-          Get quote <ArrowRight size={12} />
-        </button>
-      </div>
-
-      {/* Included */}
-      <div className="bg-gray-50 rounded-2xl p-4">
-        <p className="text-[11px] uppercase tracking-widest font-bold text-gray-500 mb-3">What's included</p>
-        {[
-          'Free site assessment & consultation',
-          'Professional installation by certified engineers',
-          '1-year workmanship warranty',
-          'Remote monitoring setup',
-        ].map(item => (
-          <div key={item} className="flex items-start gap-2 mb-2 last:mb-0">
-            <CheckCircle size={14} className="text-[#FFAA14] flex-shrink-0 mt-0.5" />
-            <p className="text-[12px] text-gray-600 font-medium">{item}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Step 4 — Lead form ───────────────────────────────────────────────────────
-function Step4({ form, onChange, error, chosenTier }) {
-  const tierLabel = { sufficient: 'Sufficient', recommended: 'Recommended', overkill: 'Overkill' };
-  return (
-    <div className="flex flex-col gap-5">
-      <div>
-        <h2 className="text-2xl font-black text-[#1A1102] mb-1">Get Your Quote</h2>
-        <p className="text-sm text-gray-400">
-          Our solar team will review your{' '}
-          <span className="font-bold text-[#FFAA14]">{tierLabel[chosenTier]}</span>{' '}
-          system and reach out with a detailed proposal.
-        </p>
-      </div>
-
-      {[
-        { key: 'name',  label: 'Full Name',     placeholder: 'e.g. Emeka Johnson',    type: 'text',  required: true  },
-        { key: 'phone', label: 'Phone Number',  placeholder: 'e.g. 08012345678',       type: 'tel',   required: true  },
-        { key: 'email', label: 'Email Address', placeholder: 'e.g. emeka@email.com',   type: 'email', required: false },
-      ].map(field => (
-        <div key={field.key}>
-          <label className="block text-sm font-bold text-gray-700 mb-2">
-            {field.label}
-            {!field.required && <span className="text-gray-400 font-normal ml-1">(optional)</span>}
-          </label>
-          <input
-            type={field.type}
-            value={form[field.key]}
-            onChange={e => onChange(field.key, e.target.value)}
-            placeholder={field.placeholder}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base font-semibold text-gray-800 outline-none focus:border-[#FFAA14] transition-colors placeholder:text-gray-300"
-          />
-        </div>
-      ))}
-
-      {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-          <AlertCircle size={15} className="text-red-400 flex-shrink-0" />
-          <p className="text-[12px] text-red-500 font-medium">{error}</p>
-        </div>
-      )}
-
-      <p className="text-[11px] text-gray-400 text-center">
-        No spam. Our team typically responds within 24 hours.
-      </p>
-    </div>
-  );
-}
-
-// ─── Success screen ───────────────────────────────────────────────────────────
-function SuccessScreen({ origin, onClose }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
-      <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center">
-        <CheckCircle size={32} className="text-[#FFAA14]" />
-      </div>
-      <h2 className="text-2xl font-black text-[#1A1102]">
-        {origin === 'add_to_cart' ? 'Added to cart!' : "You're all set!"}
-      </h2>
-      <p className="text-gray-400 text-sm max-w-xs leading-relaxed">
-        {origin === 'add_to_cart'
-          ? 'Your solar system components have been added to your cart. Proceed to checkout when ready.'
-          : 'Our solar team has received your request and will contact you within 24 hours with a detailed proposal.'}
-      </p>
-      <button
-        onClick={onClose}
-        className="mt-2 px-8 py-4 rounded-2xl bg-[#FFAA14] text-white font-black text-base hover:bg-[#e69912] transition-colors"
-      >
-        {origin === 'add_to_cart' ? 'View Cart' : 'Done'}
-      </button>
-    </div>
-  );
-}
-
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-export default function CalculatorModal({ isOpen, onClose, onCartUpdate }) {
+export default function CalculatorModal({ isOpen, onClose }) {
+  const navigate = useNavigate();
   const [step,         setStep]         = useState(1);
   const [selections,   setSelections]   = useState({});
   const [criticalOnly, setCriticalOnly] = useState(false);
@@ -646,20 +295,19 @@ export default function CalculatorModal({ isOpen, onClose, onCartUpdate }) {
     autonomyHours: 12,
     location:      'Lagos',
     batteryType:   'lithium',
-    homeType:      '',
   });
-  const [appData,      setAppData]      = useState(null);
-  const [appLoading,   setAppLoading]   = useState(false);
-  const [result,       setResult]       = useState(null);
-  const [calcLoading,  setCalcLoading]  = useState(false);
-  const [calcError,    setCalcError]    = useState(null);
-  const [chosenTier,   setChosenTier]   = useState('recommended');
-  const [chosenRec,    setChosenRec]    = useState(null);
-  const [leadForm,     setLeadForm]     = useState({ name: '', phone: '', email: '' });
-  const [leadLoading,  setLeadLoading]  = useState(false);
-  const [leadError,    setLeadError]    = useState(null);
-  const [addingToCart, setAddingToCart] = useState(false);
-  const [done,         setDone]         = useState({ show: false, origin: '' });
+  const [appData,    setAppData]    = useState(null);
+  const [appLoading, setAppLoading] = useState(false);
+  const [finding,    setFinding]    = useState(false);
+  const [findError,  setFindError]  = useState(null);
+  const [noSystems,  setNoSystems]  = useState(false);
+
+  // Quote-request lead form (origin: request_quote)
+  const [quoteMode,       setQuoteMode]       = useState(false);
+  const [quote,           setQuote]           = useState({ name: '', phone: '', email: '' });
+  const [quoteSubmitting, setQuoteSubmitting] = useState(false);
+  const [quoteError,      setQuoteError]      = useState(null);
+  const [quoteDone,       setQuoteDone]       = useState(false);
 
   // Load appliances once on first open
   useEffect(() => {
@@ -669,130 +317,106 @@ export default function CalculatorModal({ isOpen, onClose, onCartUpdate }) {
       .then(r => setAppData(r.data))
       .catch(() => setAppData(null))
       .finally(() => setAppLoading(false));
-  }, [isOpen]);
+  }, [isOpen, appData]);
 
   const totalSelected = useMemo(
     () => Object.values(selections).reduce((s, v) => s + (v.qty > 0 ? 1 : 0), 0),
     [selections],
   );
 
-  // Build appliance payload
-  const buildPayload = useCallback(() =>
-    Object.entries(selections).map(([id, val]) => ({
+  const handleClose = useCallback(() => {
+    onClose();
+    // Reset after the close animation
+    setTimeout(() => {
+      setStep(1);
+      setSelections({});
+      setCriticalOnly(false);
+      setConfig({ autonomyHours: 12, location: 'Lagos', batteryType: 'lithium' });
+      setFindError(null);
+      setNoSystems(false);
+      setQuoteMode(false);
+      setQuote({ name: '', phone: '', email: '' });
+      setQuoteError(null);
+      setQuoteDone(false);
+    }, 300);
+  }, [onClose]);
+
+  // Calculator inputs in the shape POST /api/solar/find-systems and
+  // POST /api/solar/leads both expect.
+  const buildCalcPayload = useCallback(() => ({
+    appliances: Object.entries(selections).map(([id, val]) => ({
       id:    parseInt(id),
       qty:   val.qty,
       hours: val.hours,
       watts: val.watts,
     })),
-  [selections]);
+    location:          config.location,
+    autonomyHours:     config.autonomyHours,
+    batteryType:       config.batteryType,
+    criticalLoadsOnly: criticalOnly,
+  }), [selections, config, criticalOnly]);
 
-  const handleCalculate = useCallback(async () => {
-    setCalcLoading(true);
-    setCalcError(null);
+  // Step 2 → store: size the system server-side, then show every capable
+  // product on the store page.
+  const handleFindSystems = useCallback(async () => {
+    setFinding(true);
+    setFindError(null);
+    setNoSystems(false);
     try {
-      const { data } = await API.post('/api/solar/calculate', {
-        appliances:        buildPayload(),
-        location:          config.location,
-        autonomyHours:     config.autonomyHours,
-        batteryType:       config.batteryType,
-        homeType:          config.homeType || undefined,
-        criticalLoadsOnly: criticalOnly,
-      });
-      setResult(data);
-      setStep(3);
+      const payload  = buildCalcPayload();
+      const { data } = await API.post('/api/solar/find-systems', payload);
+
+      // coverage: 'full' = everything meets spec; 'partial' = closest
+      // available shown with an honest note; 'none' = nothing tagged yet.
+      if (data.coverage === 'none' || !data.ids?.length) {
+        setNoSystems(true);
+        return;
+      }
+
+      // Arm the store page's silent add_to_cart lead capture for this calculation
+      saveCalcContext(payload);
+
+      handleClose();
+      const fit = data.coverage === 'partial' ? '&fit=partial' : '';
+      navigate(`/store?recommended=${data.ids.join(',')}&kva=${data.metrics.recommendedKva}${fit}`);
     } catch (err) {
-      setCalcError(err.response?.data?.message || 'Calculation failed. Please try again.');
+      setFindError(err.response?.data?.message || 'Something went wrong. Please try again.');
     } finally {
-      setCalcLoading(false);
+      setFinding(false);
     }
-  }, [buildPayload, config, criticalOnly]);
+  }, [buildCalcPayload, navigate, handleClose]);
 
-  // Add to cart — fires cart requests then silently creates lead
-  const handleAddToCart = useCallback(async (rec, origin) => {
-    setAddingToCart(true);
-    try {
-      const found = rec.components.filter(c => c.found && c.id);
-      await Promise.all(
-        found.map(c => API.post('/api/cart', { productId: c.id, quantity: c.qty })),
-      );
-
-      // Silent lead creation
-      API.post('/api/solar/leads', {
-        appliances:    buildPayload(),
-        location:      config.location,
-        autonomyHours: config.autonomyHours,
-        batteryType:   config.batteryType,
-        homeType:      config.homeType || undefined,
-        criticalLoadsOnly: criticalOnly,
-        chosenTier:    rec.tier,
-        origin:        'add_to_cart',
-      })
-        .then(r => { if (r.data.guestToken) localStorage.setItem('guestToken', r.data.guestToken); })
-        .catch(() => {});
-
-      if (onCartUpdate) onCartUpdate();
-      setDone({ show: true, origin: 'add_to_cart' });
-    } catch (err) {
-      console.error('Add to cart error:', err);
-    } finally {
-      setAddingToCart(false);
-    }
-  }, [buildPayload, config, criticalOnly, onCartUpdate]);
-
-  // Request quote — go to step 4
-  const handleRequestQuote = useCallback((rec) => {
-    setChosenTier(rec.tier);
-    setChosenRec(rec);
-    setStep(4);
-  }, []);
-
-  // Submit quote lead
-  const handleSubmitLead = useCallback(async () => {
-    if (!leadForm.name.trim() || !leadForm.phone.trim()) {
-      setLeadError('Name and phone number are required.');
+  // Quote form → lead (origin request_quote). The solar team follows up.
+  const handleSubmitQuote = useCallback(async () => {
+    if (!quote.name.trim() || !quote.phone.trim()) {
+      setQuoteError('Please enter your name and phone number.');
       return;
     }
-    setLeadLoading(true);
-    setLeadError(null);
+    setQuoteSubmitting(true);
+    setQuoteError(null);
     try {
-      const { data } = await API.post('/api/solar/leads', {
-        appliances:    buildPayload(),
-        location:      config.location,
-        autonomyHours: config.autonomyHours,
-        batteryType:   config.batteryType,
-        homeType:      config.homeType || undefined,
-        criticalLoadsOnly: criticalOnly,
-        chosenTier,
-        origin:        'request_quote',
-        name:          leadForm.name.trim(),
-        phone:         leadForm.phone.trim(),
-        email:         leadForm.email.trim() || undefined,
+      await submitSolarLead({
+        ...buildCalcPayload(),
+        origin: 'request_quote',
+        name:   quote.name.trim(),
+        phone:  quote.phone.trim(),
+        email:  quote.email.trim() || undefined,
       });
-      if (data.guestToken) localStorage.setItem('guestToken', data.guestToken);
-      setDone({ show: true, origin: 'request_quote' });
+      setQuoteDone(true);
     } catch (err) {
-      setLeadError(err.response?.data?.message || 'Submission failed. Please try again.');
+      setQuoteError(
+        err.response?.data?.errors?.[0]
+        ?? err.response?.data?.message
+        ?? 'Could not submit your request. Please try again.'
+      );
     } finally {
-      setLeadLoading(false);
+      setQuoteSubmitting(false);
     }
-  }, [leadForm, buildPayload, config, criticalOnly, chosenTier]);
-
-  const handleClose = () => {
-    onClose();
-    // Reset after animation
-    setTimeout(() => {
-      setStep(1); setSelections({}); setCriticalOnly(false);
-      setConfig({ autonomyHours: 12, location: 'Lagos', batteryType: 'lithium', homeType: '' });
-      setResult(null); setCalcError(null);
-      setChosenTier('recommended'); setChosenRec(null);
-      setLeadForm({ name: '', phone: '', email: '' }); setLeadError(null);
-      setDone({ show: false, origin: '' });
-    }, 300);
-  };
+  }, [quote, buildCalcPayload]);
 
   if (!isOpen) return null;
 
-  const STEP_LABELS = ['Select Appliances', 'Configure System', 'View Results', 'Get Quote'];
+  const STEP_LABELS = ['Select Appliances', 'Configure System'];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 font-sans">
@@ -801,149 +425,208 @@ export default function CalculatorModal({ isOpen, onClose, onCartUpdate }) {
       <div
         className="relative bg-white w-full max-w-[480px] rounded-[32px] shadow-2xl flex flex-col overflow-hidden"
         style={{ maxHeight: '92vh' }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Solar calculator"
       >
         {/* Header */}
-        {!done.show && (
-          <div className="px-8 pt-7 pb-0 flex-shrink-0">
-            <div className="flex justify-between items-start mb-5">
-              <div className="bg-gray-50 px-4 py-2 rounded-xl">
-                <span className="text-[13px] font-black text-gray-800 tracking-tight">Solar Calculator</span>
-              </div>
-              <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <X size={18} />
-              </button>
+        <div className="px-8 pt-7 pb-0 flex-shrink-0">
+          <div className="flex justify-between items-start mb-5">
+            <div className="bg-gray-50 px-4 py-2 rounded-xl">
+              <span className="text-[13px] font-black text-gray-800 tracking-tight">Solar Calculator</span>
             </div>
-
-            {/* Progress bar */}
-            <div className="flex gap-1.5 mb-2">
-              {[1, 2, 3, 4].map(s => (
-                <div key={s} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= s ? 'bg-[#FFAA14]' : 'bg-gray-100'}`} />
-              ))}
-            </div>
-            <div className="flex justify-between items-center mb-5">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{STEP_LABELS[step - 1]}</span>
-              <span className="text-[10px] font-black text-gray-400">Step {step}/4</span>
-            </div>
+            <button onClick={handleClose} aria-label="Close calculator" className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+              <X size={18} />
+            </button>
           </div>
-        )}
+
+          {/* Progress bar */}
+          <div className="flex gap-1.5 mb-2">
+            {[1, 2].map(s => (
+              <div key={s} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${quoteMode || step >= s ? 'bg-[#FFAA14]' : 'bg-gray-100'}`} />
+            ))}
+          </div>
+          <div className="flex justify-between items-center mb-5">
+            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
+              {quoteMode ? 'Request a Quote' : STEP_LABELS[step - 1]}
+            </span>
+            <span className="text-[10px] font-black text-gray-400">
+              {quoteMode ? 'Almost done' : `Step ${step}/2`}
+            </span>
+          </div>
+        </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-8 pb-2">
-          {done.show ? (
-            <SuccessScreen origin={done.origin} onClose={handleClose} />
-          ) : (
-            <>
-              {step === 1 && (
-                <Step1
-                  selections={selections}
-                  onChange={setSelections}
-                  applianceData={appData}
-                  loading={appLoading}
-                  criticalOnly={criticalOnly}
-                  onCriticalToggle={() => setCriticalOnly(p => !p)}
-                />
-              )}
-              {step === 2 && (
-                <Step2
-                  config={config}
-                  onChange={(k, v) => setConfig(p => ({ ...p, [k]: v }))}
-                  locations={appData?.locations}
-                />
-              )}
-              {step === 3 && result && (
-                <Step3
-                  result={result}
-                  onAddToCart={handleAddToCart}
-                  addingToCart={addingToCart}
-                  onRequestQuote={handleRequestQuote}
-                />
-              )}
-              {step === 4 && (
-                <Step4
-                  form={leadForm}
-                  onChange={(k, v) => setLeadForm(p => ({ ...p, [k]: v }))}
-                  error={leadError}
-                  chosenTier={chosenTier}
-                />
-              )}
-              {calcError && step === 2 && (
-                <div className="mt-3 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-                  <AlertCircle size={15} className="text-red-400 flex-shrink-0" />
-                  <p className="text-[12px] text-red-500 font-medium">{calcError}</p>
-                </div>
-              )}
-            </>
+          {quoteMode && (
+            quoteDone ? (
+              <div className="py-10 flex flex-col items-center text-center">
+                <CheckCircle2 size={44} className="text-green-500 mb-4" />
+                <h3 className="text-lg font-black text-gray-900 mb-2">Request received!</h3>
+                <p className="text-[13px] text-gray-500 font-medium max-w-[300px]">
+                  Thanks {quote.name.split(' ')[0]} — our solar team will call you
+                  within 24 hours with a tailored quote for your setup.
+                </p>
+              </div>
+            ) : (
+              <div className="py-2">
+                <p className="text-[13px] text-gray-500 font-medium mb-5">
+                  Leave your details and our solar team will size your system and
+                  call you back with a quote — usually within 24 hours.
+                </p>
+                {[
+                  { key: 'name',  label: 'Full name *',        type: 'text',  placeholder: 'e.g. Ife Johnson' },
+                  { key: 'phone', label: 'Phone number *',     type: 'tel',   placeholder: 'e.g. 0801 234 5678' },
+                  { key: 'email', label: 'Email (optional)',   type: 'email', placeholder: 'you@example.com' },
+                ].map(f => (
+                  <label key={f.key} className="block mb-4">
+                    <span className="block text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1.5">{f.label}</span>
+                    <input
+                      type={f.type}
+                      value={quote[f.key]}
+                      onChange={e => setQuote(p => ({ ...p, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 text-[14px] font-medium focus:outline-none focus:border-[#FFAA14] focus:ring-2 focus:ring-amber-100"
+                    />
+                  </label>
+                ))}
+                {quoteError && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3" role="alert">
+                    <AlertCircle size={15} className="text-red-400 flex-shrink-0" />
+                    <p className="text-[12px] text-red-500 font-medium">{quoteError}</p>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+          {!quoteMode && step === 1 && (
+            <Step1
+              selections={selections}
+              onChange={setSelections}
+              applianceData={appData}
+              loading={appLoading}
+              criticalOnly={criticalOnly}
+              onCriticalToggle={() => setCriticalOnly(p => !p)}
+            />
+          )}
+          {!quoteMode && step === 2 && (
+            <Step2
+              config={config}
+              onChange={(k, v) => setConfig(p => ({ ...p, [k]: v }))}
+              locations={appData?.locations}
+            />
+          )}
+          {!quoteMode && findError && step === 2 && (
+            <div className="mt-3 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3" role="alert">
+              <AlertCircle size={15} className="text-red-400 flex-shrink-0" />
+              <p className="text-[12px] text-red-500 font-medium">{findError}</p>
+            </div>
+          )}
+          {!quoteMode && noSystems && step === 2 && (
+            <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3" role="alert">
+              <p className="text-[12px] text-amber-700 font-medium mb-2">
+                We couldn't size an exact system online for this load yet. Browse the
+                store, or send us your selection and our solar team will spec it for you.
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setQuoteMode(true)}
+                  className="text-[12px] font-black text-[#FFAA14] underline"
+                >
+                  Send my selection — get a quote →
+                </button>
+                <button
+                  onClick={() => { handleClose(); navigate('/store'); }}
+                  className="text-[12px] font-black text-amber-700/70 underline"
+                >
+                  Browse the store
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
         {/* Footer */}
-        {!done.show && (
-          <div className="px-8 pb-7 pt-4 bg-white border-t border-gray-50 flex-shrink-0">
-            {step === 1 && (
+        <div className="px-8 pb-7 pt-4 bg-white border-t border-gray-50 flex-shrink-0">
+          {quoteMode && (
+            quoteDone ? (
               <button
-                onClick={() => totalSelected > 0 && setStep(2)}
-                disabled={totalSelected === 0}
-                className={`w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${
-                  totalSelected > 0
-                    ? 'bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200'
-                    : 'bg-[#FFD699] text-white cursor-not-allowed'
-                }`}
+                onClick={handleClose}
+                className="w-full py-4 rounded-2xl font-black text-base bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200 transition-all"
               >
-                Continue to configuration <ChevronRight size={18} />
+                Done
               </button>
-            )}
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setQuoteMode(false); setQuoteError(null); }}
+                  disabled={quoteSubmitting}
+                  className="px-6 py-4 rounded-2xl border border-gray-200 text-sm font-black text-gray-600 hover:bg-gray-50"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleSubmitQuote}
+                  disabled={quoteSubmitting}
+                  className={`flex-1 py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${
+                    quoteSubmitting
+                      ? 'bg-[#FFD699] text-white cursor-not-allowed'
+                      : 'bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200'
+                  }`}
+                >
+                  {quoteSubmitting
+                    ? <><Loader2 size={18} className="animate-spin" /> Sending…</>
+                    : <><Phone size={18} /> Request my quote</>
+                  }
+                </button>
+              </div>
+            )
+          )}
 
-            {step === 2 && (
+          {!quoteMode && step === 1 && (
+            <button
+              onClick={() => totalSelected > 0 && setStep(2)}
+              disabled={totalSelected === 0}
+              className={`w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${
+                totalSelected > 0
+                  ? 'bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200'
+                  : 'bg-[#FFD699] text-white cursor-not-allowed'
+              }`}
+            >
+              Continue to configuration <ChevronRight size={18} />
+            </button>
+          )}
+
+          {!quoteMode && step === 2 && (
+            <>
               <div className="flex gap-3">
                 <button onClick={() => setStep(1)} className="px-6 py-4 rounded-2xl border border-gray-200 text-sm font-black text-gray-600 hover:bg-gray-50">
                   Back
                 </button>
                 <button
-                  onClick={handleCalculate}
-                  disabled={calcLoading}
+                  onClick={handleFindSystems}
+                  disabled={finding}
                   className={`flex-1 py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${
-                    calcLoading
+                    finding
                       ? 'bg-[#FFD699] text-white cursor-not-allowed'
                       : 'bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200'
                   }`}
                 >
-                  {calcLoading
-                    ? <><Loader2 size={18} className="animate-spin" /> Calculating...</>
-                    : <>See Recommendations <ChevronRight size={18} /></>
+                  {finding
+                    ? <><Loader2 size={18} className="animate-spin" /> Finding systems...</>
+                    : <><Store size={18} /> Show capable systems</>
                   }
                 </button>
               </div>
-            )}
-
-            {step === 3 && (
-              <button onClick={() => setStep(2)} className="w-full px-6 py-4 rounded-2xl border border-gray-200 text-sm font-black text-gray-600 hover:bg-gray-50">
-                ← Adjust configuration
+              <button
+                onClick={() => setQuoteMode(true)}
+                className="w-full mt-3 text-[12px] font-bold text-gray-400 hover:text-[#FFAA14] transition-colors"
+              >
+                Prefer to talk to someone? <span className="underline">Request a quote instead</span>
               </button>
-            )}
-
-            {step === 4 && (
-              <div className="flex gap-3">
-                <button onClick={() => setStep(3)} className="px-6 py-4 rounded-2xl border border-gray-200 text-sm font-black text-gray-600 hover:bg-gray-50">
-                  Back
-                </button>
-                <button
-                  onClick={handleSubmitLead}
-                  disabled={leadLoading}
-                  className={`flex-1 py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all ${
-                    leadLoading
-                      ? 'bg-[#FFD699] text-white cursor-not-allowed'
-                      : 'bg-[#FFAA14] text-white hover:bg-[#e69912] shadow-md shadow-amber-200'
-                  }`}
-                >
-                  {leadLoading
-                    ? <><Loader2 size={18} className="animate-spin" /> Submitting...</>
-                    : <>Submit Request <ChevronRight size={18} /></>
-                  }
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, MapPin, Package } from 'lucide-react';
 import api from '../utils/api.js';
@@ -42,6 +42,15 @@ const CheckoutPage = () => {
   const [errors,   setErrors]   = useState({});
   const [loading,  setLoading]  = useState(false);
   const [apiError, setApiError] = useState('');
+  // Admin-configured flat delivery fee — display only; the server recomputes
+  // the authoritative total at checkout. null = still loading.
+  const [deliveryFee, setDeliveryFee] = useState(null);
+
+  useEffect(() => {
+    api.get('/public/settings')
+      .then((res) => setDeliveryFee(Number(res.data?.delivery_fee) || 0))
+      .catch(() => setDeliveryFee(0));
+  }, []);
 
   const set = (f) => (e) => setForm((v) => ({ ...v, [f]: e.target.value }));
 
@@ -62,7 +71,9 @@ const CheckoutPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate() || items.length === 0) return;
+    // Read cart.items directly — the derived `items` const is declared later in
+    // the component body, so referencing it here relied on closure timing.
+    if (!validate() || (cart.items?.length ?? 0) === 0) return;
     setLoading(true);
     setApiError('');
 
@@ -92,9 +103,8 @@ const CheckoutPage = () => {
         // Only send guestToken for actual guests — backend uses it to find the cart
         ...(isGuest && guestToken ? { guestToken } : {}),
       };
-console.log('Submitting checkout with payload:', payload);
+
       const res   = await api.post('/orders/checkout', payload);
-      console.log(res)
       const order = res.data.data;
 
       clearCart();
@@ -108,7 +118,6 @@ console.log('Submitting checkout with payload:', payload);
         },
       });
     } catch (err) {
-      console.log(err)
       setApiError(err.response?.data?.message || 'Checkout failed. Please try again.');
       keyRef.current = genKey();
     } finally {
@@ -118,7 +127,16 @@ console.log('Submitting checkout with payload:', payload);
 
   const items    = cart.items || [];
   const subtotal = items.reduce((s, i) => s + Number(i.unitPrice) * i.quantity, 0);
-  const total    = Number(cart.total || subtotal);
+  // Mirror of the server rule: products may override the delivery fee; the
+  // order is charged the highest product fee in the cart, else the global
+  // default. The server recomputes this authoritatively at checkout.
+  const productFees  = items
+    .map((i) => parseFloat(i.product?.delivery_fee))
+    .filter((f) => Number.isFinite(f) && f >= 0);
+  const effectiveFee = productFees.length
+    ? Math.max(...productFees)
+    : (deliveryFee ?? 0);
+  const total = subtotal + (deliveryFee === null && !productFees.length ? 0 : effectiveFee);
 
   return (
     <div className="bg-white min-h-screen">
@@ -264,7 +282,13 @@ console.log('Submitting checkout with payload:', payload);
                 </div>
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Delivery</span>
-                  <span className="text-xs font-medium text-green-600">Calculated at payment</span>
+                  {deliveryFee === null && !productFees.length ? (
+                    <span className="text-xs font-medium text-gray-400">…</span>
+                  ) : effectiveFee > 0 ? (
+                    <span className="font-semibold text-gray-900">₦{effectiveFee.toLocaleString()}</span>
+                  ) : (
+                    <span className="text-xs font-bold text-green-600">Free</span>
+                  )}
                 </div>
                 <div className="flex justify-between font-black text-gray-900 pt-1 border-t border-gray-100">
                   <span>Total</span>

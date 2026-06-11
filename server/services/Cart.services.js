@@ -34,7 +34,7 @@ export const getCartWithItems = async (cartId) => {
       include: [{
         model:      db.Product,
         as:         'product',
-        attributes: ['id', 'name', 'slug', 'price', 'sale_price', 'stock', 'is_visible', 'featured_image_url'],
+        attributes: ['id', 'name', 'slug', 'price', 'sale_price', 'stock', 'is_visible', 'featured_image_url', 'delivery_fee'],
       }],
     }],
   });
@@ -102,7 +102,7 @@ export const getSavedCarts = async (userId) => {
       include: [{
         model: db.Product,
         as: 'product',
-        attributes: ['id', 'name', 'slug', 'price', 'sale_price', 'stock', 'is_visible', 'featured_image_url'],
+        attributes: ['id', 'name', 'slug', 'price', 'sale_price', 'stock', 'is_visible', 'featured_image_url', 'delivery_fee'],
       }],
     }],
     order: [['created_at', 'DESC']],

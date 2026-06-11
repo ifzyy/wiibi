@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C, FULFILLMENT, PAYMENT, REFUND_METHODS } from "../constants.js";
 import { fmt } from "../utils/format.js";
-import { getOrderNum, isNewRefund } from "../utils/orderHelpers.js";
+import { getOrderNum, getTotal, isNewRefund } from "../utils/orderHelpers.js";
 import { Chip, Inp, inputStyle, SectionLabel, Divider } from "./ui.jsx";
 
 const UpdateModal = ({ order, onClose, onSave }) => {
@@ -9,6 +9,7 @@ const UpdateModal = ({ order, onClose, onSave }) => {
   const [pStatus,      setPStatus]      = useState(order.paymentStatus ?? "unpaid");
   const [tracking,     setTracking]     = useState(order.trackingNumber ?? "");
   const [carrier,      setCarrier]      = useState(order.carrier ?? "");
+  const [eta,          setEta]          = useState((order.expectedDelivery ?? "").slice(0, 10));
   const [note,         setNote]         = useState("");
   const [refundAmt,    setRefundAmt]    = useState("");
   const [refundReason, setRefundReason] = useState("");
@@ -17,8 +18,10 @@ const UpdateModal = ({ order, onClose, onSave }) => {
   const [err,          setErr]          = useState(null);
 
   const showRefund = isNewRefund(order.paymentStatus, pStatus);
-  const showTracking = ["shipped", "delivered"].includes(fStatus);
+  const showTracking = ["shipped", "in_transit", "delivered"].includes(fStatus);
   const orderNum = getOrderNum(order);
+  const currentStatus = order.fulfillmentStatus ?? order.status ?? "pending";
+  const isShipmentUpdate = fStatus === currentStatus;
 
   const handleSave = async () => {
     setSaving(true);
@@ -27,7 +30,7 @@ const UpdateModal = ({ order, onClose, onSave }) => {
       await onSave({
         orderId:      order.id ?? order._id,
         fStatus,      pStatus,
-        note,         tracking, carrier,
+        note,         tracking, carrier, eta,
         refundAmt:    parseFloat(refundAmt) || 0,
         refundReason, refundMethod,
       });
@@ -83,6 +86,13 @@ const UpdateModal = ({ order, onClose, onSave }) => {
                 <Chip key={k} label={cfg.label} ring={cfg.ring} selected={fStatus === k} onClick={() => setFStatus(k)} />
               ))}
             </div>
+            {isShipmentUpdate && (
+              <p style={{ margin: "8px 0 0", fontSize: 11, color: C.inkFaint, lineHeight: 1.5 }}>
+                Keeping the current status — add a note below to post a shipment
+                update (e.g. “Package arrived Ibadan hub”) to the customer's
+                tracking page without moving the order forward.
+              </p>
+            )}
           </div>
 
           {/* Payment status */}
@@ -111,6 +121,22 @@ const UpdateModal = ({ order, onClose, onSave }) => {
               </div>
             </div>
           )}
+
+          {/* Estimated delivery — always editable, shown to the customer */}
+          <div>
+            <SectionLabel>Estimated Delivery</SectionLabel>
+            <input
+              type="date"
+              value={eta}
+              onChange={e => setEta(e.target.value)}
+              style={inputStyle}
+            />
+            <p style={{ margin: "6px 0 0", fontSize: 11, color: C.inkFaint, lineHeight: 1.5 }}>
+              Shown as “Expected” on the customer's order page. Defaults to ~7
+              days at checkout (~30 days for full system packages that need an
+              engineer survey) — adjust as the schedule firms up.
+            </p>
+          </div>
 
           {/* Refund block — only when switching paid → refunded */}
           {showRefund && (
@@ -147,13 +173,13 @@ const UpdateModal = ({ order, onClose, onSave }) => {
             </div>
           )}
 
-          {/* Admin note */}
+          {/* Customer-visible update note */}
           <div>
-            <SectionLabel>Admin Note</SectionLabel>
+            <SectionLabel>Update Note</SectionLabel>
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
-              placeholder="Internal note — visible in audit trail…"
+              placeholder="Shown to the customer on their order tracking page — e.g. “Package arrived Ibadan hub, out for delivery tomorrow”"
               rows={3}
               style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }}
             />

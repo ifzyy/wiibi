@@ -31,31 +31,14 @@
 
 import { useState } from "react";
 import api          from "../../../../utils/api";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// uploadSingleFile
-// ─────────────────────────────────────────────────────────────────────────────
-const uploadSingleFile = async (file, role, entityType = "general", entityId = null) => {
-  const body = new FormData();
-  body.append("images",     file);
-  body.append("role",       role);
-  body.append("entityType", entityType);
-  if (entityId != null) body.append("entity_id", String(entityId));
-
-  const { data } = await api.post("/admin/upload", body, {
-    headers:          { "Content-Type": undefined },
-    transformRequest: [(d) => d],
-  });
-
-  return data.files?.[0] ?? null;
-};
+import { uploadFile } from "../../../../utils/uploadApi";
 
 // uploadMany — parallel, preserves order, skips null/non-File slots
 const uploadMany = (files, role, entityType, entityId) =>
   Promise.all(
     files.map(f =>
       f instanceof File
-        ? uploadSingleFile(f, role, entityType, entityId)
+        ? uploadFile(f, { role, entityType, entityId })
         : Promise.resolve(null)
     )
   );
@@ -71,12 +54,9 @@ const uploadComponentImages = async (components, entityType, entityId) => {
   return Promise.all(
     (components ?? []).map(async (comp) => {
       if (comp.image instanceof File) {
-        const result = await uploadSingleFile(
-          comp.image, "gallery", entityType, entityId
-        );
+        const result = await uploadFile(comp.image, { role: "gallery", entityType, entityId });
         return result?.url ?? null;
       }
-      // Already a URL string or null — pass through
       return typeof comp.image === "string" ? comp.image : null;
     })
   );
@@ -99,6 +79,10 @@ const buildProductPayload = (form, featuredUrl, componentImageUrls = []) => ({
   price:             Number(form.price),
   sale_price:        form.sale_price ? Number(form.sale_price) : null,
   stock:             Number(form.stock)               ?? 0,
+  // "" = no override → product uses the global delivery fee from Settings
+  delivery_fee:      form.delivery_fee !== "" && form.delivery_fee != null
+                       ? Number(form.delivery_fee)
+                       : null,
 
   // ── Flags ────────────────────────────────────────────────────────────
   is_visible:        form.is_visible  ?? true,
@@ -117,6 +101,21 @@ const buildProductPayload = (form, featuredUrl, componentImageUrls = []) => ({
   warranty_duration: form.warranty_enabled && Number(form.warranty) > 0
                        ? `${Number(form.warranty)} year${Number(form.warranty) !== 1 ? "s" : ""}`
                        : null,
+
+  // ── Solar calculator matching ────────────────────────────────────────
+  // Numbers are coerced here; the server validates shape per type and
+  // rejects zero/missing values with a clear message.
+  solar_component_type: form.solar_component_type || null,
+  solar_specs: (() => {
+    const t = form.solar_component_type;
+    const s = form.solar_specs || {};
+    if (!t)                        return null;
+    if (t === "inverter")          return { kva:    Number(s.kva)    || 0 };
+    if (t === "battery")           return { ah:     Number(s.ah)     || 0, chemistry: s.chemistry || "lithium" };
+    if (t === "solar-panel")       return { watts:  Number(s.watts)  || 0 };
+    if (t === "charge-controller") return { ampere: Number(s.ampere) || 0 };
+    return null;
+  })(),
 
   // ── Specs → [{ label, value }] ───────────────────────────────────────
   // Form stores { title, info } — map to DB shape here
@@ -182,8 +181,8 @@ export const useProductSubmit = ({ form, product, onSave, onClose }) => {
       let featuredMedia = null;
 
       if (form.main_image?.type === "staged") {
-        featuredMedia = await uploadSingleFile(
-          form.main_image.file, "main", entityType, existingId,
+        featuredMedia = await uploadFile(
+          form.main_image.file, { role: "main", entityType, entityId: existingId },
         );
         console.log("✅ Main image uploaded:", featuredMedia?.url);
       } else if (form.main_image?.type === "existing") {

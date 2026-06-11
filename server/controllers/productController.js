@@ -9,19 +9,21 @@ import { generateUniqueSlug } from '../utils/generateSlug.js';
 
 const PRODUCT_ATTRIBUTES = {
   LIST: [
-    'id', 'name', 'slug', 'price', 'sale_price', 'stock', 'sku',
+    'id', 'name', 'slug', 'price', 'sale_price', 'stock', 'sku', 'delivery_fee',
     'category', 'listing_type', 'short_description', 'caption',
     'brand', 'is_visible', 'is_featured', 'featured_image_url',
     'tags', 'warranty_duration', 'trust_badges', 'powered_devices',
     'specifications', 'system_specification',
+    'solar_component_type', 'solar_specs',
     'createdAt', 'updatedAt',
   ],
   DETAIL: [
-    'id', 'name', 'slug', 'price', 'sale_price', 'stock', 'sku',
+    'id', 'name', 'slug', 'price', 'sale_price', 'stock', 'sku', 'delivery_fee',
     'category', 'listing_type', 'short_description', 'caption',
     'brand', 'is_visible', 'is_featured', 'featured_image_url',
     'tags', 'warranty_duration', 'trust_badges', 'powered_devices',
     'description', 'specifications', 'system_specification',
+    'solar_component_type', 'solar_specs',
     'warranty_details', 'createdAt', 'updatedAt',
   ],
 };
@@ -30,13 +32,68 @@ const PRODUCT_ATTRIBUTES = {
 // components is handled separately — never goes through this whitelist.
 const WRITABLE_FIELDS = [
   'name', 'slug', 'category', 'listing_type', 'brand', 'sku',
-  'price', 'sale_price', 'stock',
+  'price', 'sale_price', 'stock', 'delivery_fee',
   'is_featured', 'is_visible',
   'short_description', 'caption', 'description', 'featured_image_url',
   'tags', 'warranty_duration', 'warranty_details',
   'specifications', 'system_specification',
   'powered_devices', 'trust_badges',
+  'solar_component_type', 'solar_specs',
 ];
+
+// ── Solar matching fields ─────────────────────────────────────────────────────
+// Products tagged with a component type + specs are eligible for solar
+// calculator results. Specs are validated per type so the matcher can trust
+// the shape blindly.
+const SOLAR_TYPES       = ['inverter', 'battery', 'solar-panel', 'charge-controller'];
+const SOLAR_CHEMISTRIES = ['lithium', 'tubular', 'dry-cell'];
+
+/**
+ * Validates + normalises the solar fields. Returns { error } or { value }.
+ * A null/empty type clears both fields (untags the product).
+ */
+const validateSolarFields = (type, specs) => {
+  if (type == null || type === '') {
+    return { value: { solar_component_type: null, solar_specs: null } };
+  }
+  if (!SOLAR_TYPES.includes(type)) {
+    return { error: `solar_component_type must be one of: ${SOLAR_TYPES.join(', ')}` };
+  }
+
+  let s = specs;
+  if (typeof s === 'string') {
+    try { s = JSON.parse(s); } catch { s = null; }
+  }
+  s = s ?? {};
+
+  switch (type) {
+    case 'inverter': {
+      const kva = Number(s.kva);
+      if (!(kva > 0)) return { error: 'solar_specs.kva must be a positive number for inverters' };
+      return { value: { solar_component_type: type, solar_specs: { kva } } };
+    }
+    case 'battery': {
+      const ah = Number(s.ah);
+      if (!(ah > 0)) return { error: 'solar_specs.ah must be a positive number for batteries' };
+      if (!SOLAR_CHEMISTRIES.includes(s.chemistry)) {
+        return { error: `solar_specs.chemistry must be one of: ${SOLAR_CHEMISTRIES.join(', ')}` };
+      }
+      return { value: { solar_component_type: type, solar_specs: { ah, chemistry: s.chemistry } } };
+    }
+    case 'solar-panel': {
+      const watts = Number(s.watts);
+      if (!(watts > 0)) return { error: 'solar_specs.watts must be a positive number for solar panels' };
+      return { value: { solar_component_type: type, solar_specs: { watts } } };
+    }
+    case 'charge-controller': {
+      const ampere = Number(s.ampere);
+      if (!(ampere > 0)) return { error: 'solar_specs.ampere must be a positive number for charge controllers' };
+      return { value: { solar_component_type: type, solar_specs: { ampere } } };
+    }
+    default:
+      return { error: 'Unknown solar component type' };
+  }
+};
 
 const formatWarrantyDuration = (value) => {
   if (value == null) return null;
@@ -63,6 +120,8 @@ const normalizeProductPayload = (data = {}) => ({
   trust_badges:         data.trust_badges         ?? data.trustBadges,
   is_visible:           data.is_visible           ?? data.isVisible,
   is_featured:          data.is_featured          ?? data.isFeatured,
+  solar_component_type: data.solar_component_type ?? data.solarComponentType,
+  solar_specs:          data.solar_specs          ?? data.solarSpecs,
 });
 
 const normalizeProductResponse = (data = {}) => {
@@ -396,11 +455,6 @@ export const getAdminProducts = async (req, res) => {
 export const createProduct = async (req, res) => {
   try {
     const data = normalizeProductPayload(req.body);
-    console.log('DEBUG createProduct payload received:', {
-      warranty_enabled: data.warranty_enabled,
-      warranty_duration: data.warranty_duration,
-      warranty_details: data.warranty_details,
-    });
 
     if (!data.name?.trim()) {
       return res.status(400).json({ message: 'Product name is required' });
@@ -410,6 +464,11 @@ export const createProduct = async (req, res) => {
     }
     if (!data.price || Number(data.price) <= 0) {
       return res.status(400).json({ message: 'A valid price is required' });
+    }
+
+    const solarResult = validateSolarFields(data.solar_component_type, data.solar_specs);
+    if (solarResult.error) {
+      return res.status(422).json({ message: solarResult.error });
     }
 
     const slug        = await generateUniqueSlug(data.name, null, 'Product');
@@ -426,6 +485,7 @@ export const createProduct = async (req, res) => {
         price:        Number(data.price),
         sale_price:   data.sale_price ? Number(data.sale_price) : null,
         stock:        Number(data.stock) || 0,
+        delivery_fee: data.delivery_fee ? Number(data.delivery_fee) : null,
         is_visible:   data.is_visible  ?? true,
         is_featured:  data.is_featured ?? false,
         short_description:    data.short_description?.trim() || null,
@@ -439,6 +499,8 @@ export const createProduct = async (req, res) => {
         system_specification: data.system_specification || null,
         powered_devices:      data.powered_devices      || null,
         trust_badges:         data.trust_badges         || null,
+        solar_component_type: solarResult.value.solar_component_type,
+        solar_specs:          solarResult.value.solar_specs,
       }, { transaction: t });
 
       if (listingType === 'package' && Array.isArray(data.components) && data.components.length) {
@@ -466,11 +528,6 @@ export const updateProduct = async (req, res) => {
     const { id }   = req.params;
     const parsedId = parseInt(id, 10);
     const data     = normalizeProductPayload(req.body);
-    console.log('DEBUG updateProduct payload received for id=', parsedId, {
-      warranty_enabled: data.warranty_enabled,
-      warranty_duration: data.warranty_duration,
-      warranty_details: data.warranty_details,
-    });
 
     const product = await db.Product.findByPk(parsedId);
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -483,9 +540,28 @@ export const updateProduct = async (req, res) => {
     if (updates.price      != null) updates.price      = Number(updates.price);
     if (updates.sale_price != null) updates.sale_price = updates.sale_price ? Number(updates.sale_price) : null;
     if (updates.stock      != null) updates.stock      = Number(updates.stock);
+    // '' / 0 / null all mean "use the global delivery fee"
+    if ('delivery_fee' in updates && updates.delivery_fee !== undefined) {
+      updates.delivery_fee = updates.delivery_fee ? Number(updates.delivery_fee) : null;
+    }
     if (updates.listing_type)       updates.listing_type = updates.listing_type.toLowerCase();
     if (updates.name)               updates.name         = updates.name.trim();
     if (updates.category)           updates.category     = updates.category.trim();
+
+    // Solar matching fields — validate together. `undefined` means "not sent"
+    // (normalizeProductPayload always defines the keys), so an unrelated edit
+    // must never silently untag a product.
+    if (updates.solar_component_type !== undefined || updates.solar_specs !== undefined) {
+      const solarResult = validateSolarFields(
+        updates.solar_component_type !== undefined ? updates.solar_component_type : product.solar_component_type,
+        updates.solar_specs          !== undefined ? updates.solar_specs          : product.solar_specs,
+      );
+      if (solarResult.error) {
+        return res.status(422).json({ message: solarResult.error });
+      }
+      updates.solar_component_type = solarResult.value.solar_component_type;
+      updates.solar_specs          = solarResult.value.solar_specs;
+    }
 
     if (updates.name && !updates.slug?.trim()) {
       updates.slug = await generateUniqueSlug(updates.name, parsedId, 'Product');
@@ -518,7 +594,6 @@ export const updateProduct = async (req, res) => {
         dbHelpers.componentsInclude(),
       ],
     });
-console.log('FINAL updates object:', updated.toJSON());
     return res.json(formatters.product(updated));
   } catch (err) {
     console.error('updateProduct error:', err);

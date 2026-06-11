@@ -63,10 +63,15 @@ export const verifyGoogleIdToken = async (idToken) => {
   if (!payload?.sub) throw new AuthError('Google token missing subject');
 
   return {
-    providerId: payload.sub,
-    email:      payload.email   ?? null,
-    name:       payload.name    ?? null,
-    avatar:     payload.picture ?? null,
+    providerId:    payload.sub,
+    email:         payload.email   ?? null,
+    // Google sets email_verified; we only trust the email for cross-account
+    // LINKING when it is verified (see oauthLogin). An unverified email must
+    // never be used to attach this provider to an existing account, or an
+    // attacker could create a Google account with a victim's email and take over.
+    emailVerified: payload.email_verified === true,
+    name:          payload.name    ?? null,
+    avatar:        payload.picture ?? null,
   };
 };
 
@@ -86,7 +91,7 @@ export const exchangeGoogleCode = async (code, redirectUri) => {
 
 // ── Find or create user, issue our JWT pair ───────────────────────────────────
 export const oauthLogin = async (provider, profile, ipAddress, userAgent) => {
-  const { providerId, email, name, avatar } = profile;
+  const { providerId, email, emailVerified, name, avatar } = profile;
 
   const user = await db.sequelize.transaction(async (t) => {
     // A. Returning OAuth user
@@ -102,8 +107,10 @@ export const oauthLogin = async (provider, profile, ipAddress, userAgent) => {
       return existing.user;
     }
 
-    // B. Email matches existing account — link provider
-    let foundUser = email
+    // B. Email matches existing account — link provider.
+    // Only link by email when the provider VERIFIED that email. An unverified
+    // email is never trusted to attach to a pre-existing account (takeover risk).
+    let foundUser = (email && emailVerified)
       ? await db.User.findOne({ where: { email }, transaction: t })
       : null;
 

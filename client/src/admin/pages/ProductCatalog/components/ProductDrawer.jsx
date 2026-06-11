@@ -111,6 +111,7 @@ const useProductForm = (product, isOpen) => {
         price: product.price || "",
         sale_price: product.sale_price || "",
         stock: product.stock ?? 0,
+        delivery_fee: product.delivery_fee ?? "",
 
         // ── Flags ─────────────────────────────────────────────────────
         is_visible: product.is_visible ?? true,
@@ -124,6 +125,8 @@ const useProductForm = (product, isOpen) => {
         // ── Taxonomy / warranty ───────────────────────────────────────
         tags: product.tags || [],
         powered_devices: parsePoweredDevices(product.powered_devices ?? product.poweredDevices),
+        solar_component_type: product.solar_component_type || "",
+        solar_specs: product.solar_specs || {},
         warranty_enabled: !!(product.warranty_duration ?? product.warrantyDuration),
         // "2 years" → 2, "1 year" → 1, fallback 1
         warranty: parseInt(product.warranty_duration ?? product.warrantyDuration) || 1,

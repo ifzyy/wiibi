@@ -71,20 +71,125 @@ export const createForm = async (req, res) => {
   }
 };
 
-/** PUT /admin/forms/:id */
+/** PUT /admin/forms/:id — updates metadata + full fields/options upsert */
 export const updateForm = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(422).json({ success: false, errors: errors.array() });
 
+  const t = await db.sequelize.transaction();
   try {
-    const form = await Form.findByPk(req.params.id);
-    if (!form) return res.status(404).json({ success: false, message: 'Form not found' });
+    const form = await Form.findByPk(req.params.id, { transaction: t });
+    if (!form) {
+      await t.rollback();
+      return res.status(404).json({ success: false, message: 'Form not found' });
+    }
 
-    const { name, description, is_active } = req.body;
-    await form.update({ name, description, is_active });
+    const { name, description, is_active, fields = [] } = req.body;
 
-    return res.json({ success: true, data: form });
+    // Update form metadata
+    const metaUpdates = {};
+    if (name !== undefined) metaUpdates.name = name;
+    if (description !== undefined) metaUpdates.description = description;
+    if (is_active !== undefined) metaUpdates.is_active = is_active;
+    if (Object.keys(metaUpdates).length) await form.update(metaUpdates, { transaction: t });
+
+    // Existing fields in DB for this form
+    const existingFields = await FormField.findAll({
+      where: { form_id: form.id },
+      include: [{ model: FieldOption, as: 'options' }],
+      transaction: t,
+    });
+    const existingFieldIds = new Set(existingFields.map((f) => f.id));
+    const incomingFieldIds = new Set(fields.filter((f) => f.id).map((f) => Number(f.id)));
+
+    // Delete fields removed from the payload
+    const toDeleteFieldIds = [...existingFieldIds].filter((id) => !incomingFieldIds.has(id));
+    if (toDeleteFieldIds.length) {
+      await FormField.destroy({ where: { id: toDeleteFieldIds }, transaction: t });
+    }
+
+    // Upsert each field + its options
+    for (const [i, fieldData] of fields.entries()) {
+      const { id, options = [], ...rest } = fieldData;
+      const numId = id ? Number(id) : null;
+
+      let field;
+      if (numId && existingFieldIds.has(numId)) {
+        await FormField.update(
+          {
+            label:       rest.label,
+            field_type:  rest.field_type,
+            placeholder: rest.placeholder ?? null,
+            is_required: rest.is_required ?? false,
+            sort_order:  i,
+            is_active:   rest.is_active ?? true,
+          },
+          { where: { id: numId }, transaction: t }
+        );
+        field = await FormField.findByPk(numId, { transaction: t });
+      } else {
+        field = await FormField.create(
+          {
+            form_id:     form.id,
+            label:       rest.label,
+            field_type:  rest.field_type,
+            placeholder: rest.placeholder ?? null,
+            is_required: rest.is_required ?? false,
+            sort_order:  i,
+            is_active:   rest.is_active ?? true,
+          },
+          { transaction: t }
+        );
+      }
+
+      // Upsert options for this field
+      const existingOpts = await FieldOption.findAll({ where: { field_id: field.id }, transaction: t });
+      const existingOptIds = new Set(existingOpts.map((o) => o.id));
+      const incomingOptIds = new Set(options.filter((o) => o.id).map((o) => Number(o.id)));
+
+      const toDeleteOptIds = [...existingOptIds].filter((id) => !incomingOptIds.has(id));
+      if (toDeleteOptIds.length) {
+        await FieldOption.destroy({ where: { id: toDeleteOptIds }, transaction: t });
+      }
+
+      for (const [j, opt] of options.entries()) {
+        const numOptId = opt.id ? Number(opt.id) : null;
+        if (numOptId && existingOptIds.has(numOptId)) {
+          await FieldOption.update(
+            { label: opt.label, value: opt.value, sort_order: j },
+            { where: { id: numOptId }, transaction: t }
+          );
+        } else {
+          await FieldOption.create(
+            {
+              field_id:   field.id,
+              label:      opt.label,
+              value:      opt.value || opt.label.toLowerCase().replace(/\s+/g, '_'),
+              sort_order: j,
+            },
+            { transaction: t }
+          );
+        }
+      }
+    }
+
+    await t.commit();
+
+    // Re-fetch the complete form with fields and options
+    const updated = await Form.findByPk(form.id, {
+      include: [
+        {
+          model: FormField,
+          as: 'fields',
+          required: false,
+          include: [{ model: FieldOption, as: 'options' }],
+        },
+      ],
+    });
+
+    return res.json({ success: true, data: updated });
   } catch (err) {
+    await t.rollback();
     return res.status(500).json({ success: false, message: err.message });
   }
 };

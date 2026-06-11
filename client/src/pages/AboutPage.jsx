@@ -243,7 +243,7 @@ console.log("Resolved media URLs:", { heroImageUrl, pillar1Image, pillar2Image, 
 
         <div className="grid lg:grid-cols-2 gap-20 max-w-7xl mx-auto px-6 py-8">
           {/* LEFT: PROCESS STEPS */}
-          <div className="space-y-16">
+          <div>
             {[
               {
                 step_number: 1,
@@ -265,17 +265,22 @@ console.log("Resolved media URLs:", { heroImageUrl, pillar1Image, pillar2Image, 
                 heading: "Installation & Support",
                 support_text: "Professional installation followed by comprehensive maintenance and support."
               }
-            ].map((step, idx) => (
-              <div key={idx} className="relative flex flex-col group">
-                {idx !== 3 && (
-                  <div className="absolute left-[26px] top-14 w-[1px] h-full bg-amber-100" />
-                )}
-                <div>
-                  <div className="pb-2 rounded-2xl group-hover:bg-white group-hover:shadow-md transition-all duration-300">
-                    {PROCESS_ICONS[step.step_number] || <Zap size={20} />}
+            ].map((step, idx, arr) => (
+              <div key={idx} className="flex gap-5 group">
+                {/* Badge + connector column */}
+                <div className="flex flex-col items-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-[#FFAA14] font-black text-sm group-hover:bg-[#FFAA14] group-hover:text-white transition-colors duration-300">
+                    {step.step_number}
                   </div>
-                  <h4 className="text-[14px] font-black text-[#FFAA14] mb-3">
-                    {step.step_number} {step.heading}
+                  {idx !== arr.length - 1 && (
+                    <div className="w-px flex-1 bg-amber-100 mt-2" />
+                  )}
+                </div>
+
+                {/* Content */}
+                <div className="pb-10">
+                  <h4 className="text-[15px] font-black text-[#1A1102] mb-2 pt-2">
+                    {step.heading}
                   </h4>
                   <p className="text-stone-500 text-sm leading-relaxed max-w-sm">
                     {step.support_text}

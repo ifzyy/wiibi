@@ -9,8 +9,9 @@ const { Form, FormField, FieldOption, FormSubmission } = db;
 /** POST /forms/:formId/submit */
 export const submitForm = async (req, res) => {
   try {
+    // NOTE: findByPk ignores a top-level `where`, so is_active must be checked
+    // after load — otherwise inactive forms would still accept submissions.
     const form = await Form.findByPk(req.params.formId, {
-      where: { is_active: true },
       include: [
         {
           model: FormField,
@@ -20,7 +21,9 @@ export const submitForm = async (req, res) => {
         },
       ],
     });
-    if (!form) return res.status(404).json({ success: false, message: 'Form not found or inactive' });
+    if (!form || !form.is_active) {
+      return res.status(404).json({ success: false, message: 'Form not found or inactive' });
+    }
 
     // Validate required fields
     const requiredFields = form.fields.filter((f) => f.is_required);

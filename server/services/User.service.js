@@ -19,18 +19,19 @@ export const getAllUsers = async ({ page = 1, limit = 20 } = {}) => {
   };
 };
 
-export const getAllUsersNoPagination = async () => {
-  const users = await db.User.findAll({ order: [['createdAt', 'DESC']] });
-  return users.map((u) => u.toSafeJSON());
-};
 
 export const updateProfile = async (id, data) => {
   const user    = await getUserById(id);
-  const allowed = ['firstName', 'lastName','email', 'phone', 'avatarUrl', 'shippingAddress'];
+  const allowed = ['firstName', 'lastName', 'email', 'avatarUrl', 'shippingAddress'];
   const updates = {};
   for (const key of allowed) {
     if (data[key] !== undefined) updates[key] = data[key];
   }
+  // The model attribute is `phoneNumber` (column phone_number); the API field is
+  // `phone`. Map it explicitly — otherwise Sequelize drops the unknown `phone`
+  // key and phone updates silently no-op. `role` is intentionally NOT settable here.
+  if (data.phone !== undefined) updates.phoneNumber = data.phone;
+
   await user.update(updates);
   return user.toSafeJSON();
 };

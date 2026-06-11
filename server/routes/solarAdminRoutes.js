@@ -17,6 +17,7 @@ import {
   adminDeleteAppliance,
   adminGetSettings,
   adminUpdateSetting,
+  adminGetCoverage,
 } from '../controllers/solarController.js';
 
 const router = express.Router();
@@ -39,6 +40,10 @@ router.get('/appliances',        adminGetAppliances);
 router.post('/appliances',       adminCreateAppliance);
 router.patch('/appliances/:id',  adminUpdateAppliance);
 router.delete('/appliances/:id', adminDeleteAppliance);
+
+// ── Catalog coverage ──────────────────────────────────────────────────────────
+// GET /api/admin/solar/coverage — gaps that would force calculator fallbacks
+router.get('/coverage',          adminGetCoverage);
 
 // ── Cost settings ─────────────────────────────────────────────────────────────
 // GET   /api/admin/solar/settings

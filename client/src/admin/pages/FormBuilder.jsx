@@ -1,12 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { adminApi } from "../utils/api.js";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
-const token = () => localStorage.getItem("token");
-
-const authHeaders = {
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${token()}`,
-};
+// Auth is handled by the shared cookie-based adminApi instance (httpOnly cookie
+// + automatic token refresh). The previous `Bearer ${localStorage.token}` was
+// broken — nothing in this app ever sets a "token" key, so those requests went
+// out unauthenticated — and storing a JWT in localStorage would expose it to XSS.
 
 const FIELD_TYPES = [
   { value: "input",    label: "Text Input" },
@@ -241,11 +239,10 @@ export default function FormBuilder({ formId, onBack }) {
   // Load existing form
   useEffect(() => {
     if (!formId) return;
-    fetch(`${API_BASE}/admin/forms/${formId}`, {
-      headers: { Authorization: `Bearer ${token()}` },
-    })
-      .then((r) => r.json())
-      .then(({ data }) => {
+    let cancelled = false;
+    adminApi.get(`/admin/forms/${formId}`)
+      .then(({ data: { data } }) => {
+        if (cancelled) return;
         setFormName(data.name);
         setDescription(data.description ?? "");
         setIsActive(data.is_active);
@@ -257,8 +254,9 @@ export default function FormBuilder({ formId, onBack }) {
           }))
         );
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!cancelled) setError(e.response?.data?.message ?? e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [formId]);
 
   const addField = () =>
@@ -308,15 +306,12 @@ export default function FormBuilder({ formId, onBack }) {
     };
 
     try {
-      const url    = formId ? `${API_BASE}/admin/forms/${formId}` : `${API_BASE}/admin/forms`;
-      const method = formId ? "PUT" : "POST";
-      const res    = await fetch(url, { method, headers: authHeaders, body: JSON.stringify(payload) });
-      const json   = await res.json();
-      if (!res.ok) throw new Error(json.message ?? "Save failed");
+      if (formId) await adminApi.put(`/admin/forms/${formId}`, payload);
+      else        await adminApi.post(`/admin/forms`, payload);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      setError(e.message);
+      setError(e.response?.data?.message ?? e.message ?? "Save failed");
     } finally {
       setSaving(false);
     }

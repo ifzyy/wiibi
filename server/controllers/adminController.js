@@ -1,6 +1,7 @@
 import db from '../models/index.js';
 import { Op } from 'sequelize';
-import { invalidatePageCache } from './publicController.js';
+import { invalidatePageCache, PUBLIC_SETTINGS_CACHE_KEY } from './publicController.js';
+import cacheUtil from '../middleware/Cachemiddleware.js';
 
 // ============================================================================
 // MIDDLEWARE
@@ -63,11 +64,31 @@ export const updateGlobalSetting = async (req, res) => {
   const { value } = req.body;
 
   try {
-    const setting = await db.GlobalSetting.findOne({ where: { key } });
-    if (!setting) return res.status(404).json({ message: 'Setting not found' });
+    // Upsert — the Settings page saves keys whose rows may not exist yet
+    // (previously every such save 404'd silently and nothing persisted).
+    let setting = await db.GlobalSetting.findOne({ where: { key } });
 
-    setting.value = value;
-    await setting.save();
+    if (setting) {
+      setting.value = value;
+      await setting.save();
+    } else {
+      const inferredType =
+        typeof value === 'number'  ? 'number'  :
+        typeof value === 'boolean' ? 'boolean' :
+        Array.isArray(value)       ? 'array'   :
+        typeof value === 'object' && value !== null ? 'object' : 'text';
+
+      setting = await db.GlobalSetting.create({
+        key,
+        value,
+        type:  inferredType,
+        label: key.replace(/[_.]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        group: 'general',
+      });
+    }
+
+    // Storefront reads public settings through this cache (e.g. delivery_fee)
+    cacheUtil.del(PUBLIC_SETTINGS_CACHE_KEY);
 
     res.json({ message: 'Updated', setting });
   } catch (err) {

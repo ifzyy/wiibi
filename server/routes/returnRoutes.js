@@ -16,6 +16,7 @@ import {
   handleRequestReturn,
   handleConfirmReturn,
   handleGetManualRefunds,
+  handleGetAllRefunds,
   handleMarkRefundComplete,
 } from '../controllers/returnController.js';
 
@@ -28,6 +29,7 @@ router.get ('/',                              handleGetReturns);
 router.post('/:orderId/request',             handleRequestReturn);
 router.post('/:orderId/confirm',             handleConfirmReturn);
 router.get ('/manual-refunds',               handleGetManualRefunds);
+router.get ('/refunds',                      handleGetAllRefunds);
 router.post('/refunds/:refundId/complete',   handleMarkRefundComplete);
 
 export default router;

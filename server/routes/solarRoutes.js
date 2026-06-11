@@ -12,6 +12,7 @@ import { validateCalculateInput, validateLeadInput } from '../middleware/validat
 import {
   getAppliances,
   calculate,
+  findSystems,
   createLead,
   getLeadById,
 } from '../controllers/solarController.js';
@@ -21,8 +22,12 @@ const router = express.Router();
 // GET  /api/solar/appliances     — step 1: load appliance list + locations
 router.get('/appliances', getAppliances);
 
-// POST /api/solar/calculate      — step 3: run sizing + match products (stateless)
+// POST /api/solar/calculate      — run sizing + match products (stateless)
 router.post('/calculate', validateCalculateInput, calculate);
+
+// POST /api/solar/find-systems   — step 2 handoff: list ALL capable store
+//                                  products so /store can display them
+router.post('/find-systems', validateCalculateInput, findSystems);
 
 // POST /api/solar/leads          — step 4: create lead (quote request or add-to-cart)
 router.post('/leads', optionalAuth, validateLeadInput, createLead);

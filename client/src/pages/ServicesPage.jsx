@@ -18,6 +18,20 @@ import api from "../utils/api";
 // ─── Change this to match your form's ID in the database ─────────────────────
 const QUOTE_FORM_ID = 1;
 
+// ─── Nigerian states — static list ───────────────────────────────────────────
+// Previously fetched from a free third-party API (nga-states-lga.onrender.com)
+// that is frequently down/asleep. When it failed, State and LGA stayed empty
+// and EVERY submission was rejected with "Missing required fields". A static
+// list can't break; LGA is free-text since a full LGA dataset isn't worth a
+// dependency.
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT - Abuja', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
+
 // ─── Field label/placeholder overrides per property type ─────────────────────
 const FIELD_OVERRIDES = {
   "Business Name": {
@@ -114,13 +128,9 @@ export const QuoteRequestForm = () => {
   const [propertyType, setPropertyType]   = useState("Commercial");
   const [locationDetail, setLocationDetail] = useState("");
 
-  // ── Nigerian location ──
-  const [ngStates, setNgStates]           = useState([]);
-  const [ngLgas, setNgLgas]               = useState([]);
+  // ── Nigerian location — static states, free-text LGA ──
   const [selectedState, setSelectedState] = useState("");
   const [selectedLGA, setSelectedLGA]     = useState("");
-  const [statesLoading, setStatesLoading] = useState(true);
-  const [lgasLoading, setLgasLoading]     = useState(false);
 
   // ── submission ──
   const [submitting, setSubmitting]       = useState(false);
@@ -130,43 +140,13 @@ export const QuoteRequestForm = () => {
   // ── fetch form schema ──
   useEffect(() => {
     api
-      .get(`/admin/forms/${QUOTE_FORM_ID}`)
+      .get(`/forms/${QUOTE_FORM_ID}`)
       .then(({ data }) => setFormSchema(data.data))
       .catch((err) =>
         setSchemaError(err?.response?.data?.message ?? "Failed to load form")
       )
       .finally(() => setSchemaLoading(false));
   }, []);
-
-  // ── fetch Nigerian states ──
-  useEffect(() => {
-    fetch("https://nga-states-lga.onrender.com/fetch")
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        setNgStates(list);
-        if (list.length > 0) setSelectedState(list[0]);
-      })
-      .catch(() => setNgStates([]))
-      .finally(() => setStatesLoading(false));
-  }, []);
-
-  // ── fetch LGAs on state change ──
-  useEffect(() => {
-    if (!selectedState) return;
-    setLgasLoading(true);
-    setSelectedLGA("");
-    setNgLgas([]);
-    fetch(`https://nga-states-lga.onrender.com/?state=${encodeURIComponent(selectedState)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        setNgLgas(list);
-        if (list.length > 0) setSelectedLGA(list[0]);
-      })
-      .catch(() => setNgLgas([]))
-      .finally(() => setLgasLoading(false));
-  }, [selectedState]);
 
   const handleChange = (fieldLabel, val) =>
     setValues((prev) => ({ ...prev, [fieldLabel]: val }));
@@ -179,6 +159,23 @@ export const QuoteRequestForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
+
+    // Client-side required check — friendlier than the server's 422
+    const missing = [];
+    sortedFields.forEach((f) => {
+      if (!f.is_required) return;
+      if (f.label === "Property Type") return; // always has a value
+      if (f.label === "State") { if (!selectedState) missing.push("State"); return; }
+      if (f.label === "LGA")   { if (!selectedLGA.trim()) missing.push("LGA"); return; }
+      const resolved = resolveField(f, propertyType);
+      if (!resolved) return;
+      if (!String(values[f.label] ?? "").trim()) missing.push(resolved.label);
+    });
+    if (missing.length) {
+      setSubmitError(`Please fill in: ${missing.join(", ")}`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const data = buildSubmissionData({
@@ -260,45 +257,32 @@ export const QuoteRequestForm = () => {
               return (
                 <div key={i} className="flex flex-col gap-2 col-span-1">
                   <label className="text-xs font-black text-black ml-1">State</label>
-                  <SelectWrapper loading={statesLoading}>
+                  <SelectWrapper>
                     <select
                       value={selectedState}
                       onChange={(e) => setSelectedState(e.target.value)}
-                      disabled={statesLoading}
                       className={selectCls}
                     >
-                      {statesLoading ? (
-                        <option>Loading…</option>
-                      ) : (
-                        ngStates.map((s) => <option key={s} value={s}>{s}</option>)
-                      )}
+                      <option value="" disabled>Select state</option>
+                      {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </SelectWrapper>
                 </div>
               );
             }
 
-            // ── LGA ──
+            // ── LGA — free text ──
             if (field.label === "LGA") {
               return (
                 <div key={i} className="flex flex-col gap-2 col-span-1">
                   <label className="text-xs font-black text-black ml-1">LGA</label>
-                  <SelectWrapper loading={lgasLoading}>
-                    <select
-                      value={selectedLGA}
-                      onChange={(e) => setSelectedLGA(e.target.value)}
-                      disabled={lgasLoading || ngLgas.length === 0}
-                      className={selectCls}
-                    >
-                      {lgasLoading ? (
-                        <option>Loading…</option>
-                      ) : ngLgas.length === 0 ? (
-                        <option>Select a state first</option>
-                      ) : (
-                        ngLgas.map((l) => <option key={l} value={l}>{l}</option>)
-                      )}
-                    </select>
-                  </SelectWrapper>
+                  <input
+                    type="text"
+                    value={selectedLGA}
+                    onChange={(e) => setSelectedLGA(e.target.value)}
+                    placeholder="e.g. Ikeja"
+                    className={inputCls}
+                  />
                 </div>
               );
             }
@@ -449,7 +433,7 @@ const ServicesPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/public/pages/services");
+        const response = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/public/pages/services`);
         setPageData(response.data);
       } catch (error) {
         console.error("Error fetching page data", error);

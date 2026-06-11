@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
+import { uploadFile } from "../../../../utils/uploadApi.js";
 
 function ToolbarBtn({ onClick, active, title, children, disabled }) {
   return (
@@ -25,6 +26,9 @@ function Divider() {
 }
 
 export default function EditorToolbar({ editor }) {
+  const fileInputRef = useRef(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
   const setLink = useCallback(() => {
     if (!editor) return;
     const prev = editor.getAttributes("link").href || "";
@@ -37,7 +41,28 @@ export default function EditorToolbar({ editor }) {
     }
   }, [editor]);
 
-  const addImage = useCallback(() => {
+  // Primary path: pick a file, upload it through the shared upload API, and
+  // insert the stored URL — so inline article images live on our storage
+  // instead of depending on external hosts.
+  const handleImageFile = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file || !editor) return;
+
+    setUploadingImage(true);
+    try {
+      const record = await uploadFile(file, { entityType: "blog", role: "gallery" });
+      editor.chain().focus().setImage({ src: record.url, alt: record.alt_text || "" }).run();
+    } catch (err) {
+      console.error("Inline image upload failed:", err);
+      window.alert(err.response?.data?.message || "Image upload failed. Please try again.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }, [editor]);
+
+  // Secondary path: paste an external image URL instead of uploading.
+  const addImageByUrl = useCallback(() => {
     if (!editor) return;
     const url = window.prompt("Enter image URL:");
     if (url) editor.chain().focus().setImage({ src: url }).run();
@@ -158,14 +183,39 @@ export default function EditorToolbar({ editor }) {
         </svg>
       </ToolbarBtn>
       <ToolbarBtn
-        onClick={addImage}
+        onClick={() => fileInputRef.current?.click()}
         active={false}
-        title="Insert Image"
+        disabled={uploadingImage}
+        title="Upload Image"
       >
-        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+        {uploadingImage ? (
+          <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin block" />
+        ) : (
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+          </svg>
+        )}
+      </ToolbarBtn>
+      <ToolbarBtn
+        onClick={addImageByUrl}
+        active={false}
+        title="Insert Image from URL"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/>
+          <path d="M21 15l-5-5L5 21"/>
         </svg>
       </ToolbarBtn>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageFile}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
 
       <Divider />
 

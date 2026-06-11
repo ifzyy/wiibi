@@ -37,7 +37,8 @@ export default (sequelize, DataTypes) => {
         field:     'order_number',
       },
 
-      // FIXED: added 'return_requested' and 'returned' for the return flow
+      // 'return_requested'/'returned' for the return flow;
+      // 'expired' is set by the abandoned-order expiry job.
       status: {
         type: DataTypes.ENUM(
           'pending',
@@ -47,7 +48,8 @@ export default (sequelize, DataTypes) => {
           'delivered',
           'cancelled',
           'return_requested',
-          'returned'
+          'returned',
+          'expired'
         ),
         defaultValue: 'pending',
       },
@@ -68,6 +70,24 @@ export default (sequelize, DataTypes) => {
         type:      DataTypes.DECIMAL(12, 2),
         allowNull: false,
         field:     'total_amount',
+      },
+
+      // Snapshot of the admin-configured delivery fee at checkout time.
+      // totalAmount already includes it: total = items subtotal + deliveryFee.
+      deliveryFee: {
+        type:         DataTypes.DECIMAL(12, 2),
+        allowNull:    false,
+        defaultValue: 0,
+        field:        'delivery_fee',
+      },
+
+      // Estimated delivery date shown to the customer ("Expected"). Defaulted
+      // at checkout (7d normal / 30d for system packages), admin-editable from
+      // the order management modal.
+      expectedDelivery: {
+        type:      DataTypes.DATEONLY,
+        allowNull: true,
+        field:     'expected_delivery',
       },
 
       currency: {

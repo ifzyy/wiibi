@@ -40,10 +40,10 @@ export function sequelizeLogger(sql, timing) {
     console.log(chalk.gray("│"));
 
     if (timing !== undefined) {
-      const timeColor = timing > 50 ? chalk.red : chalk.green;
+      const timeColor = timing > 800 ? chalk.red : chalk.green;
       console.log(chalk.gray("│ ") + timeColor(`⏱ ${timing} ms`));
 
-      if (timing > 100) {
+      if (timing > 800) {
         console.log(chalk.gray("│ ") + chalk.red("🐢 SLOW QUERY DETECTED"));
       }
     }

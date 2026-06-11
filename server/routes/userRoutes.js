@@ -3,7 +3,6 @@ import {
   handleGetMe,
   handleUpdateMe,
   handleGetAllUsers,
-  handleGetAllUsersTest,
   handleGetUser,
   handleUpdateRole,
   handleDeactivateUser,
@@ -22,9 +21,5 @@ router.get   ('/',           authMiddleware, requireRole('admin'), handleGetAllU
 router.get   ('/:id',        authMiddleware, requireRole('admin'), handleGetUser);
 router.patch ('/:id/role',   authMiddleware, requireRole('admin'), handleUpdateRole);
 router.delete('/:id',        authMiddleware, requireRole('admin'), handleDeactivateUser);
-
-if (process.env.NODE_ENV !== 'production') {
-  router.get('/test/all', handleGetAllUsersTest);
-}
 
 export default router;

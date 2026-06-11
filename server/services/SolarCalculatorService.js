@@ -47,8 +47,9 @@ const BATTERY_UNIT_AH   = 200;   // 200Ah battery unit
 const BATTERY_UNIT_V    = 48;    // default system voltage
 const BATTERY_UNIT_KWH  = (BATTERY_UNIT_AH * BATTERY_UNIT_V) / 1000; // 9.6kWh
 
-// Inverter snap-up steps (kVA)
-const INVERTER_STEPS = [1, 2, 3, 5, 7.5, 10, 15, 20];
+// Inverter snap-up steps (kVA) — exported so the admin coverage report can
+// flag catalog gaps against the sizes the calculator can recommend.
+export const INVERTER_STEPS = [1, 2, 3, 5, 7.5, 10, 15, 20];
 
 // Charge controller snap-up steps (A)
 const CONTROLLER_STEPS = [20, 30, 40, 60, 80, 100];

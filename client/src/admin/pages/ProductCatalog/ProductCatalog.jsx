@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+import api from "../../../utils/api";
 import { COLORS } from "./constants";
 import { useProducts }      from "./hooks/useProducts";
 import { useProductFilter } from "./hooks/useProductFilter";
@@ -31,6 +32,52 @@ import {
 // ⚠️  Do NOT call useProducts.createProduct or useProducts.saveProduct here —
 //     that would double-save. Those hooks are only used for inline row edits.
 // =============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// SolarCoverageBanner
+// Shows catalog gaps that would force the solar calculator into fallback
+// results (e.g. "no inverter above 7.5kVA in stock"). Fix = tag/restock
+// products via the Solar Matching section in the product form.
+// ─────────────────────────────────────────────────────────────────────────────
+const SolarCoverageBanner = ({ warnings, onDismiss }) => {
+  if (!warnings?.length) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        background: "#FFF8EC",
+        border: "1px solid #F5C96A",
+        borderRadius: 12,
+        padding: "14px 18px",
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+      }}
+    >
+      <span style={{ fontSize: 16, lineHeight: 1 }} aria-hidden="true">☀</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#7A4F00" }}>
+          Solar calculator coverage gaps
+        </p>
+        <ul style={{ margin: "6px 0 0", paddingLeft: 16, display: "flex", flexDirection: "column", gap: 3 }}>
+          {warnings.map((w, i) => (
+            <li key={i} style={{ fontSize: 12, color: "#7A4F00" }}>{w}</li>
+          ))}
+        </ul>
+        <p style={{ margin: "8px 0 0", fontSize: 11, color: "#A07A30" }}>
+          Fix: open a product and set its component type + specs under <b>Solar Matching</b>.
+        </p>
+      </div>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss coverage warnings"
+        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#A07A30", lineHeight: 1, padding: 2 }}
+      >
+        ×
+      </button>
+    </div>
+  );
+};
+
 const ProductCatalogPage = () => {         // no token prop — api handles auth
   const {
     products,
@@ -57,8 +104,19 @@ const ProductCatalogPage = () => {         // no token prop — api handles auth
 
   const [isDrawerOpen,   setIsDrawerOpen]   = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [coverageWarnings, setCoverageWarnings] = useState([]);
+  const [coverageDismissed, setCoverageDismissed] = useState(false);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  // Solar calculator coverage — best-effort, never blocks the page
+  const fetchCoverage = useCallback(() => {
+    api.get("/admin/solar/coverage")
+      .then(r => setCoverageWarnings(r.data?.warnings ?? []))
+      .catch(() => setCoverageWarnings([]));
+  }, []);
+
+  useEffect(() => { fetchCoverage(); }, [fetchCoverage]);
 
   const openNewProductDrawer = useCallback(() => {
     setEditingProduct(null);
@@ -100,8 +158,10 @@ const ProductCatalogPage = () => {         // no token prop — api handles auth
       // For creates, re-fetch so the new product appears with correct server state
       await fetchProducts();
     }
+    // Tagging/untagging a product can change calculator coverage
+    fetchCoverage();
     // Drawer closed by useProductSubmit via onClose after this resolves
-  }, [fetchProducts, setProducts]);
+  }, [fetchProducts, setProducts, fetchCoverage]);
 
   return (
     <div style={{
@@ -124,6 +184,13 @@ const ProductCatalogPage = () => {         // no token prop — api handles auth
         flexDirection: "column",
         gap: 20,
       }}>
+        {!coverageDismissed && (
+          <SolarCoverageBanner
+            warnings={coverageWarnings}
+            onDismiss={() => setCoverageDismissed(true)}
+          />
+        )}
+
         <StatCards stats={stats} products={products} />
 
         <FilterBar

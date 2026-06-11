@@ -1,22 +1,6 @@
 /**
  * src/utils/api.js
- *
- * Key fixes for guest checkout:
- *
- *  1. shouldRefresh now only triggers on TOKEN_EXPIRED, not NO_TOKEN.
- *     NO_TOKEN means the user has no auth session at all — could be a guest
- *     who never logged in. Attempting a refresh for guests is pointless and
- *     causes the refresh to fail, which previously wiped their guestToken.
- *
- *  2. localStorage.removeItem('guestToken') removed from the refresh failure
- *     handler. guestToken must only be cleared intentionally after a successful
- *     login (in AuthContext, after mergeGuestCart completes). Clearing it on
- *     any auth failure silently destroys active guest shopping sessions.
- *
- *  TOKEN_EXPIRED = user WAS logged in, token just expired → try silent refresh
- *  NO_TOKEN      = user is a guest OR fully logged out → pass through as-is
  */
-
 import axios from 'axios';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -30,7 +14,10 @@ export const api = axios.create({
 // ── Request interceptor ───────────────────────────────────────────────────────
 api.interceptors.request.use((config) => {
   const guestToken = localStorage.getItem('guestToken');
-  if (guestToken) config.headers['X-Guest-Token'] = guestToken;
+  const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  if (guestToken && !isLoggedIn) {
+    config.headers['X-Guest-Token'] = guestToken;
+  }
   return config;
 });
 
@@ -50,11 +37,12 @@ api.interceptors.response.use(
     const status   = error.response?.status;
     const code     = error.response?.data?.code;
 
-    // Only attempt a token refresh when we know a token existed but expired.
-    // NO_TOKEN means no session at all (guest or logged-out) — no point refreshing.
+    // Refresh on expiry, or on NO_TOKEN when this browser had a session —
+    // the access cookie may be gone while the refresh cookie is still valid.
+    const hadSession = localStorage.getItem('isLoggedIn') === 'true';
     const shouldRefresh =
       status === 401 &&
-      code === 'TOKEN_EXPIRED' || code === 'NO_TOKEN' &&
+      (code === 'TOKEN_EXPIRED' || (code === 'NO_TOKEN' && hadSession)) &&
       !original._retry &&
       !original.url?.includes('/auth/refresh');
 
@@ -75,13 +63,7 @@ api.interceptors.response.use(
       return api(original);
     } catch (refreshError) {
       drainQueue(refreshError);
-      // Do NOT remove guestToken here. The auth refresh failed because the
-      // user's login session expired — that has nothing to do with their
-      // guest cart. Removing it here would destroy an active guest session
-      // any time any auth token expires anywhere in the app.
-      //
-      // guestToken is cleared in exactly one place: AuthContext, after a
-      // successful login + cart merge.
+      localStorage.removeItem('isLoggedIn');
       window.dispatchEvent(new CustomEvent('auth:logout'));
       return Promise.reject(refreshError);
     } finally {
@@ -91,53 +73,24 @@ api.interceptors.response.use(
 );
 
 export { api as adminApi };
-/* ── Order API helpers ───────────────────────────────────────────────────── */
 
-/**
- * GET /orders  (admin)
- * @param {{ page?: number, limit?: number, status?: string }} params
- */
+/* ── Order API helpers ───────────────────────────────────────────────────── */
 export const fetchOrders = (params = {}) =>
   api.get('/orders', { params }).then((r) => r.data);
 
-/**
- * GET /orders/:id  (admin)
- */
 export const fetchOrder = (id) =>
   api.get(`/orders/${id}`).then((r) => r.data);
 
-/**
- * PATCH /orders/:id/status  (admin)
- *
- * Accepts the full update payload the OMS sends.
- * Fields your current backend schema doesn't yet support (paymentStatus,
- * carrier, refund*) are sent here too — the backend changes in
- * orderController.js / updateStatusSchema handle them.
- *
- * @param {string} id
- * @param {{
- *   status: string,
- *   paymentStatus?: string,
- *   note?: string,
- *   trackingNumber?: string,
- *   carrier?: string,
- *   refund?: { amount: number, reason: string, method: string } | null
- * }} payload
- */
 export const updateOrderStatus = (id, payload) =>
   api.patch(`/orders/${id}/status`, payload).then((r) => r.data);
 
-/**
- * GET /orders/my  (customer — kept for completeness)
- */
 export const fetchMyOrders = (params = {}) =>
   api.get('/orders/my', { params }).then((r) => r.data);
 
-/**
- * GET /orders/my/:id  (customer — single order detail page)
- */
 export const fetchMyOrder = (id) =>
   api.get(`/orders/my/${id}`).then((r) => r.data);
+
+/* ── Page / nav constants ────────────────────────────────────────────────── */
 export const PAGES = [
   { id: 'page-home',     label: 'Homepage', slug: 'home',     icon: 'home',  color: '#f59e0b' },
   { id: 'page-store',    label: 'Store',    slug: 'store',    icon: 'store', color: '#10b981' },
@@ -148,15 +101,19 @@ export const PAGES = [
 ];
 
 export const NAV_SECTIONS = [
-  { id: 'pages',    label: 'Pages',    icon: 'layout'      },
-  { id: 'projects', label: 'Projects', icon: 'briefcase'   },
-  { id: 'products', label: 'Products', icon: 'package'     },
-  { id: 'orders',   label: 'Orders',   icon: 'shopping-cart' },
-  { id: 'blog',     label: 'Blog',     icon: 'blog'        },
-  {id: 'refunds',    label: 'Refunds',   icon: 'credit-card' },
-  { id: 'faqs',     label: 'FAQs',     icon: 'help-circle' },
-  {id:'forms', label:'Forms', icon:'file-text' },
-  { id: 'settings', label: 'Settings', icon: 'settings'    },
+  { id: 'pages',     label: 'Pages',     icon: 'layout'        },
+  { id: 'projects',  label: 'Projects',  icon: 'briefcase'     },
+  { id: 'products',  label: 'Products',  icon: 'package'       },
+  { id: 'orders',    label: 'Orders',    icon: 'shopping-cart' },
+  { id: 'analytics', label: 'Analytics', icon: 'bar-chart'     },
+  { id: 'customers', label: 'Customers', icon: 'users'         },
+  { id: 'payments',  label: 'Payments',  icon: 'credit-card'   },
+  { id: 'support',   label: 'Support',   icon: 'help-circle'   },
+  { id: 'blog',      label: 'Blog',      icon: 'blog'          },
+  { id: 'refunds',   label: 'Refunds',   icon: 'credit-card'   },
+  { id: 'faqs',      label: 'FAQs',      icon: 'help-circle'   },
+  { id: 'forms',     label: 'Forms',     icon: 'file-text'     },
+  { id: 'settings',  label: 'Settings',  icon: 'settings'      },
 ];
 
 export const SECTION_LABELS = {

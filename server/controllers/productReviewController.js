@@ -195,15 +195,20 @@ export const createReview = async (req, res) => {
     // Adjust the Order model name / status value to match your schema.
     let verified = false;
     if (userId && db.Order) {
+      // A review is "verified" when the user has a delivered order containing
+      // this product. Note: the Order↔OrderItem association alias is 'items'
+      // (not 'orderItems'), and the terminal status is 'delivered' (there is no
+      // 'completed' in the status enum) — the previous values silently failed
+      // through the .catch, so no review was ever marked verified.
       const order = await db.Order.findOne({
         where: {
           userId,
-          status: 'completed',          // adjust to your order status enum
-          '$orderItems.productId$': productId,
+          status: 'delivered',
+          '$items.productId$': productId,
         },
         include: [{
           model:    db.OrderItem,
-          as:       'orderItems',
+          as:       'items',
           attributes: [],
         }],
         attributes: ['id'],

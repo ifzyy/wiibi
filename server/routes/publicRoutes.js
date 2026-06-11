@@ -7,11 +7,13 @@ import {
   getPublicFaqs,
   getProjectBySlug,
   getPublicProjects,
+  getPublicSettings,
 } from '../controllers/publicController.js';
 
 const router = express.Router();
 
 router.get('/homepage',        getHomepage);
+router.get('/settings',        getPublicSettings);
 router.get('/pages/:slug',     getPageBySlug);
 router.get('/products',        getPublicProducts);
 router.get('/products/:slug',  getProductBySlug);

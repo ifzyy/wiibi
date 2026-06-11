@@ -8,6 +8,8 @@ import PromoHeader from './PromoHeader';
 import WiibiLogo from './assets/wiibi-logo.svg';
 import AuthModal from './Auth/AuthModal';
 import { useAuth } from './context/AuthContext.jsx';
+import usePublicSettings from './hooks/usePublicSettings.js';
+import { useCalculatorModal } from './context/CalculatorModalContext.jsx';
 import { useCart } from './context/CartContext.jsx';
 
 const Navigation = () => {
@@ -97,6 +99,22 @@ const Navigation = () => {
     { label: 'About Us',         href: '/about',          hasDropdown: false },
   ];
 
+  const settings = usePublicSettings();
+  const siteName = settings.site_name || 'Wiibi Energy';
+  const { openCalculator } = useCalculatorModal();
+
+  // The Solar Calculator entry opens the modal in place instead of routing —
+  // the user keeps their current page. href stays for semantics/middle-click.
+  const handleMenuClick = (item) => (e) => {
+    if (item.href === '/calculator') {
+      e.preventDefault();
+      setMobileOpen(false);
+      openCalculator();
+      return;
+    }
+    handleLinkClick(e);
+  };
+
   const profileLinks = [
     { icon: User,       label: 'My Account',              href: '/account'               },
     { icon: Calculator, label: 'Solar Calculator History', href: '/account/solar-history' },
@@ -118,8 +136,8 @@ const Navigation = () => {
         <div className="fixed inset-0 z-[60] bg-white flex flex-col lg:hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <a href="/" className="flex items-center gap-2">
-              <img src={WiibiLogo} alt="Wiibi" className="w-7 h-7" />
-              <span className="font-bold text-base text-[#1A1102]">Wiibi Energy</span>
+              <img src={WiibiLogo} alt={siteName} className="w-7 h-7" />
+              <span className="font-bold text-base text-[#1A1102]">{siteName}</span>
             </a>
             <button onClick={() => setMobileOpen(false)} className="p-2 text-gray-400 hover:text-gray-900">
               <X size={22} />
@@ -127,7 +145,7 @@ const Navigation = () => {
           </div>
           <nav className="flex-1 overflow-y-auto px-6 py-5">
             {menuItems.map((item) => (
-              <a key={item.label} href={item.href} onClick={handleLinkClick}
+              <a key={item.label} href={item.href} onClick={handleMenuClick(item)}
                 className="flex items-center justify-between py-3.5 text-sm font-semibold text-gray-700 hover:text-[#FFAA14] border-b border-gray-50 transition-colors">
                 {item.label} <span className="text-gray-300 text-xs">→</span>
               </a>
@@ -171,8 +189,8 @@ const Navigation = () => {
 
               {/* Logo */}
               <a href="/" onClick={handleLinkClick} className="flex items-center gap-2 shrink-0">
-                <img src={WiibiLogo} alt="Wiibi Logo" className="w-7 h-7" />
-                <span className="font-bold text-base text-[#1A1102]">Wiibi Energy</span>
+                <img src={WiibiLogo} alt={`${siteName} Logo`} className="w-7 h-7" />
+                <span className="font-bold text-base text-[#1A1102]">{siteName}</span>
               </a>
 
               {/* Desktop nav links */}
@@ -185,7 +203,7 @@ const Navigation = () => {
                       onMouseEnter={() => item.hasDropdown && handleMouseEnter(item.label)}
                       onMouseLeave={item.hasDropdown ? handleMouseLeave : undefined}
                       className="relative py-6">
-                      <a href={item.href} onClick={handleLinkClick}
+                      <a href={item.href} onClick={handleMenuClick(item)}
                         className={`flex items-center gap-1 text-sm font-semibold transition-colors ${
                           isActive || isHovered ? 'text-[#FFAA14]' : 'text-gray-500 hover:text-[#FFAA14]'
                         }`}>

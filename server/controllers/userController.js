@@ -5,7 +5,6 @@ import { ValidationError } from '../utils/AppError.js';
 import {
   getUserById,
   getAllUsers,
-  getAllUsersNoPagination,
   updateProfile,
   updateUserRole,
   deactivateUser,
@@ -34,7 +33,6 @@ export const handleGetMe = asyncHandler(async (req, res) => {
 });
 
 export const handleUpdateMe = asyncHandler(async (req, res) => {
-  console.log(req.body)
   const { error, value } = profileSchema.validate(req.body);
   if (error) throw new ValidationError(error.details[0].message);
   const user = await updateProfile(req.user.id, value);
@@ -48,10 +46,6 @@ export const handleGetAllUsers = asyncHandler(async (req, res) => {
   return sendPaginated(res, users, pagination);
 });
 
-export const handleGetAllUsersTest = asyncHandler(async (_req, res) => {
-  const users = await getAllUsersNoPagination();
-  return sendSuccess(res, users);
-});
 
 export const handleGetUser = asyncHandler(async (req, res) => {
   const user = await getUserById(req.params.id);

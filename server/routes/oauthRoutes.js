@@ -14,11 +14,15 @@ import {
   handleGoogleLogin,
 
 } from '../controllers/oauthController.js';
+import { validate }     from '../middleware/auth.validation.js';
+import { oauthSchemas } from '../middleware/oauth.validation.js';
 
 const router = express.Router();
 
-// Popup / One Tap — credential is an id_token or auth-code
-router.post('/google',      handleGoogleLogin);
+// Popup / One Tap — credential is an id_token or auth-code.
+// validate() guarantees `credential` is a non-empty string so the controller's
+// credential.startsWith('4/') can never throw on undefined.
+router.post('/google',      validate(oauthSchemas.google), handleGoogleLogin);
 
 
 export default router;

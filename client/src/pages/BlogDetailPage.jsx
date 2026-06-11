@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import axios from "axios";
+import SafeHtml from "../components/SafeHtml.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -238,7 +239,8 @@ export default function BlogDetailPage() {
 
             {/* Article body */}
             <article>
-              <div
+              <SafeHtml
+                html={post.content}
                 className="
                   prose prose-base max-w-none
                   prose-headings:font-black prose-headings:text-[#0C0901] prose-headings:tracking-tight prose-headings:leading-tight
@@ -258,7 +260,6 @@ export default function BlogDetailPage() {
                   prose-code:text-amber-600 prose-code:bg-amber-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-lg prose-code:text-[0.9em] prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
                   prose-pre:bg-[#0C0901] prose-pre:rounded-2xl prose-pre:shadow-xl prose-pre:my-8
                 "
-                dangerouslySetInnerHTML={{ __html: post.content }}
               />
             </article>
 

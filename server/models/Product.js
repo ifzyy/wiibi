@@ -1,7 +1,5 @@
 'use strict';
 
-import { time } from "node:console";
-
 export default (sequelize, DataTypes) => {
   const Product = sequelize.define(
     'Product',
@@ -69,6 +67,15 @@ export default (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 0,
         validate: { min: 0 },
+      },
+      delivery_fee: {
+        // Optional per-product delivery fee (₦). NULL = use the global
+        // delivery_fee setting. Orders charge the HIGHEST product fee in the
+        // cart — one delivery, priced by the bulkiest item.
+        type:      DataTypes.DECIMAL(12, 2),
+        allowNull: true,
+        field:     'delivery_fee',
+        validate:  { min: 0 },
       },
 
       // ── Flags ────────────────────────────────────────────────────────────
@@ -166,6 +173,28 @@ export default (sequelize, DataTypes) => {
         type: DataTypes.JSON,
         allowNull: true,
         field: 'system_specification',
+        defaultValue: null,
+      },
+
+      // ── Solar calculator matching ─────────────────────────────────────────
+      // Products tagged here are eligible for solar calculator results.
+      // solar_specs shape varies by component type:
+      //   inverter          → { kva: 5 }
+      //   battery           → { ah: 200, chemistry: 'lithium'|'tubular'|'dry-cell' }
+      //   solar-panel       → { watts: 400 }
+      //   charge-controller → { ampere: 60 }
+      solar_component_type: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        field: 'solar_component_type',
+        validate: {
+          isIn: [['inverter', 'battery', 'solar-panel', 'charge-controller']],
+        },
+      },
+      solar_specs: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        field: 'solar_specs',
         defaultValue: null,
       },
    // ── Timestamps ──────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { ImageOff } from 'lucide-react';
 import { MOCK_PACKAGE_COMPONENTS } from './mockData.js';
+import SafeHtml from '../../components/SafeHtml.jsx';
 
 // ── Package description: components with images + descriptions ─────────────
 const PackageDescription = ({ components,description }) => (
@@ -47,9 +48,9 @@ const NormalDescription = ({ product }) => (
   <div className="max-w-4xl space-y-6">
 
     {product.description ? (
-      <div
+      <SafeHtml
         className="text-black bg-[#f9f9f9] font-semibold text-[15px] text-sm leading-relaxed prose prose-sm max-w-none"
-        dangerouslySetInnerHTML={{ __html: product.description }}
+        html={product.description}
       />
     ) : product.short_description ? (
       <p className="text-gray-700 text-sm font-semibold">
@@ -64,7 +65,6 @@ const NormalDescription = ({ product }) => (
 
 // ── Tab entry point ────────────────────────────────────────────────────────
 const TabDescription = ({ product }) => {
-  console.log("Product in TabDescription:", product);
   const isPackage  = product.listing_type?.toLowerCase() === 'package';
   const components = product.components || MOCK_PACKAGE_COMPONENTS;
 

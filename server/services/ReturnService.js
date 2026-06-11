@@ -21,7 +21,7 @@
 import { Op } from 'sequelize';
 import db from '../models/index.js';
 import { NotFoundError, AppError } from '../utils/AppError.js';
-import { initiateRefund } from './MockPaymentService.js';
+import { initiateRefund } from './paymentProvider.js';
 
 const PAYSTACK_REFUND_WINDOW_MS = 20 * 24 * 60 * 60 * 1000;
 const toKobo = (ngn) => Math.round(parseFloat(ngn) * 100);
@@ -78,8 +78,27 @@ export const requestReturn = async (orderId, adminId, { reason, notes }) => {
  * @param {string} adminId
  * @param {{ refundMethod?: string, notes?: string }} payload
  */
+const ORDER_WITH_DETAIL = (orderId) => db.Order.findByPk(orderId, {
+  include: [
+    { model: db.OrderItem,     as: 'items'    },
+    { model: db.OrderTracking, as: 'timeline' },
+    { model: db.Refund,        as: 'refunds'  },
+  ],
+});
+
+const REFUND_ACTIVE = ['pending', 'processing', 'completed', 'manual_required'];
+
 export const confirmReturn = async (orderId, adminId, { refundMethod = 'Paystack', notes } = {}) => {
+  // ── Phase 1: DB transaction — restock, set status, create a PENDING refund ──
+  // No external HTTP calls happen here. The gateway is called in phase 2, after
+  // this transaction commits, so we never hold a row lock across a network call.
   const t = await db.sequelize.transaction();
+
+  let refundId         = null;
+  let paymentReference = null;
+  let orderTotal       = 0;
+  let orderCreatedAt   = null;
+  let isPaid           = false;
 
   try {
     const order = await db.Order.findOne({
@@ -98,17 +117,14 @@ export const confirmReturn = async (orderId, adminId, { refundMethod = 'Paystack
       );
     }
 
-    // Guard: double-refund — block if a pending/completed refund already exists
+    // Guard: double-refund — block if any non-failed refund already exists.
     const existingRefund = await db.Refund.findOne({
-      where: {
-        orderId,
-        status: { [Op.in]: ['pending', 'completed'] },
-      },
+      where: { orderId, status: { [Op.in]: REFUND_ACTIVE } },
       transaction: t,
     });
     if (existingRefund) {
       throw new AppError(
-        'A refund is already in progress for this order. ' +
+        'A refund already exists for this order. ' +
         'Wait for it to complete before confirming the return.',
         409
       );
@@ -123,7 +139,6 @@ export const confirmReturn = async (orderId, adminId, { refundMethod = 'Paystack
       })
     ));
 
-    // Update order status
     await order.update({ status: 'returned' }, { transaction: t });
 
     await db.OrderTracking.create({
@@ -133,87 +148,103 @@ export const confirmReturn = async (orderId, adminId, { refundMethod = 'Paystack
       updatedBy: adminId,
     }, { transaction: t });
 
-    // ── Refund logic ──────────────────────────────────────────────────────────
-    const orderTotal       = parseFloat(order.totalAmount);
-    const hasReference     = !!order.paymentReference;
-    const chargeAgeMs      = Date.now() - new Date(order.updatedAt).getTime();
-    const beyondWindow     = chargeAgeMs > PAYSTACK_REFUND_WINDOW_MS;
-    const isPaid           = ['paid', 'partially_refunded'].includes(order.paymentStatus);
-
-    let finalMethod  = refundMethod;
-    let refundStatus = 'pending';
-    let gatewayResult = null;
+    orderTotal       = parseFloat(order.totalAmount);
+    paymentReference = order.paymentReference;
+    orderCreatedAt   = order.createdAt;
+    isPaid           = ['paid', 'partially_refunded'].includes(order.paymentStatus);
 
     if (isPaid) {
-      if (!hasReference) {
-        finalMethod  = 'Bank Transfer';
-        refundStatus = 'manual_required';
-        console.warn(`[ReturnService] Order ${orderId} has no paymentReference — manual refund required`);
-      } else if (beyondWindow && finalMethod === 'Paystack') {
-        finalMethod  = 'Bank Transfer';
-        refundStatus = 'manual_required';
-        console.warn(`[ReturnService] Order ${orderId} past Paystack 20-day window — manual refund required`);
-      } else if (finalMethod === 'Paystack') {
-        try {
-          gatewayResult = await initiateRefund({
-            reference:    order.paymentReference,
-            amount:       toKobo(orderTotal),
-            merchantNote: `Return confirmed · ${notes ?? 'Items received'}`,
-          });
-        } catch (err) {
-          console.error('[ReturnService] Paystack refund failed:', err.message);
-          finalMethod  = 'Bank Transfer';
-          refundStatus = 'manual_required';
-        }
-      }
-
-      const refundRecord = await db.Refund.create({
+      const refund = await db.Refund.create({
         orderId,
-        amount:           orderTotal,
-        currency:         order.currency ?? 'NGN',
-        reason:           'Return confirmed — full refund',
-        method:           finalMethod,
-        status:           refundStatus,
-        gatewayReference: gatewayResult?.data?.transaction_reference ?? null,
-        processedBy:      adminId,
-        processedAt:      new Date(),
+        amount:      orderTotal,
+        currency:    order.currency ?? 'NGN',
+        reason:      'Return confirmed — full refund',
+        method:      refundMethod,
+        status:      'pending',
+        processedBy: adminId,
+        processedAt: new Date(),
       }, { transaction: t });
-
-      await order.update(
-        { paymentStatus: refundStatus === 'completed' ? 'refunded' : order.paymentStatus },
-        { transaction: t }
-      );
-
-      const refundNote = refundStatus === 'manual_required'
-        ? `Manual refund of ₦${orderTotal.toLocaleString('en-NG')} required via ${finalMethod}`
-        : `Refund of ₦${orderTotal.toLocaleString('en-NG')} initiated via ${finalMethod}`;
-
-      await db.OrderTracking.create({
-        orderId:   order.id,
-        status:    'returned',
-        note:      refundNote,
-        updatedBy: adminId,
-      }, { transaction: t });
+      refundId = refund.id;
     }
 
     await t.commit();
-
-    return {
-      order:          await db.Order.findByPk(orderId, {
-        include: [
-          { model: db.OrderItem,     as: 'items'    },
-          { model: db.OrderTracking, as: 'timeline' },
-          { model: db.Refund,        as: 'refunds'  },
-        ],
-      }),
-      manualRequired: refundStatus === 'manual_required',
-      method:         finalMethod,
-    };
-
   } catch (err) {
     await t.rollback();
     throw err;
   }
+
+  // Unpaid order — nothing to refund.
+  if (!isPaid || !refundId) {
+    return { order: await ORDER_WITH_DETAIL(orderId), manualRequired: false, method: refundMethod };
+  }
+
+  // ── Phase 2: call the gateway OUTSIDE any transaction ──────────────────────
+  let finalMethod = refundMethod;
+  let finalStatus = 'pending';
+  let gatewayRef  = null;
+
+  const hasReference = !!paymentReference;
+  // Use the order's createdAt — when the charge actually happened. (updatedAt was
+  // just bumped to 'returned', so it would make every order look brand new and
+  // defeat the 20-day window check.)
+  const beyondWindow = (Date.now() - new Date(orderCreatedAt).getTime()) > PAYSTACK_REFUND_WINDOW_MS;
+
+  if (!hasReference) {
+    finalMethod = 'Bank Transfer';
+    finalStatus = 'manual_required';
+    console.warn(`[ReturnService] Order ${orderId} has no paymentReference — manual refund required`);
+  } else if (beyondWindow && finalMethod === 'Paystack') {
+    finalMethod = 'Bank Transfer';
+    finalStatus = 'manual_required';
+    console.warn(`[ReturnService] Order ${orderId} past Paystack 20-day window — manual refund required`);
+  } else if (finalMethod === 'Paystack') {
+    try {
+      const gatewayResult = await initiateRefund({
+        reference:    paymentReference,
+        amount:       toKobo(orderTotal),
+        merchantNote: `Return confirmed · ${notes ?? 'Items received'}`,
+      });
+      // status:false is a structured failure (not a thrown error) — escalate to manual.
+      if (!gatewayResult?.status) {
+        throw new Error(gatewayResult?.message || 'Refund declined by payment provider');
+      }
+      gatewayRef  = gatewayResult?.data?.refund_reference ?? null;
+      finalStatus = 'pending';
+    } catch (err) {
+      console.error('[ReturnService] Paystack refund failed:', err.message);
+      finalMethod = 'Bank Transfer';
+      finalStatus = 'manual_required';
+    }
+  }
+
+  // Persist the gateway outcome on the refund record created in phase 1.
+  const refund = await db.Refund.findByPk(refundId);
+  await refund.update({
+    method:           finalMethod,
+    status:           finalStatus,
+    gatewayReference: gatewayRef,
+    processedAt:      new Date(),
+  });
+
+  // Only a fully-completed refund flips the order to 'refunded'.
+  if (finalStatus === 'completed') {
+    await db.Order.update({ paymentStatus: 'refunded' }, { where: { id: orderId } });
+  }
+
+  await db.OrderTracking.create({
+    orderId,
+    status: 'returned',
+    note:   finalStatus === 'manual_required'
+      ? `Manual refund of ₦${orderTotal.toLocaleString('en-NG')} required via ${finalMethod}`
+      : `Refund of ₦${orderTotal.toLocaleString('en-NG')} initiated via ${finalMethod}`,
+    updatedBy: adminId,
+  });
+
+  return {
+    order:          await ORDER_WITH_DETAIL(orderId),
+    manualRequired: finalStatus === 'manual_required',
+    method:         finalMethod,
+  };
 };
 
 // ── Get all return requests ───────────────────────────────────────────────────
@@ -240,6 +271,55 @@ export const getReturnRequests = async ({ page = 1, limit = 20, status = null } 
 
   return {
     returns: rows,
+    pagination: { page, limit: safeLimit, total: count, pages: Math.ceil(count / safeLimit) },
+  };
+};
+
+// ── All refunds (any status) ──────────────────────────────────────────────────
+// Backs the admin Refunds tab. Without this, gateway refunds (status
+// 'pending', e.g. from a customer cancelling a paid order) were invisible —
+// the page only listed manual_required ones.
+
+export const getAllRefunds = async ({ page = 1, limit = 20, status = null } = {}) => {
+  const safeLimit = Math.min(limit, 100);
+  const offset    = (page - 1) * safeLimit;
+
+  const where = {};
+  if (status) where.status = status;
+
+  const [{ rows, count }, statusRows] = await Promise.all([
+    db.Refund.findAndCountAll({
+      where,
+      include: [{
+        model:      db.Order,
+        as:         'order',
+        attributes: ['id', 'orderNumber', 'totalAmount', 'currency', 'paymentReference', 'guestEmail'],
+        include: [{
+          model:      db.User,
+          as:         'user',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'],
+          required:   false,
+        }],
+      }],
+      order:    [['createdAt', 'DESC']],
+      limit:    safeLimit,
+      offset,
+      distinct: true,
+    }),
+    // Per-status counts for the filter chips — always unfiltered
+    db.Refund.findAll({
+      attributes: ['status', [db.sequelize.fn('COUNT', db.sequelize.col('id')), 'count']],
+      group:      ['status'],
+      raw:        true,
+    }),
+  ]);
+
+  const counts = {};
+  for (const row of statusRows) counts[row.status] = parseInt(row.count, 10);
+
+  return {
+    refunds: rows,
+    counts,
     pagination: { page, limit: safeLimit, total: count, pages: Math.ceil(count / safeLimit) },
   };
 };

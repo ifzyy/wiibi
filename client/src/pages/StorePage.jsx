@@ -7,7 +7,9 @@ import {
   CheckCircle2, ArrowUpDown,
 } from 'lucide-react';
 import { useCart } from '../context/CartContext.jsx';
+import { useCalculatorModal } from '../context/CalculatorModalContext.jsx';
 import { usePublicProducts } from '../hooks/queries';
+import { recordAddToCartLead } from '../utils/solarLead.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -123,6 +125,13 @@ function useFilterState() {
     is_featured:  get('is_featured'),
     sort:         get('sort'),
     view:         get('view', 'grid'),
+    // Comma-separated product ids from the solar calculator — filters the grid
+    // down to systems capable of the customer's entered load. `kva` is the
+    // recommended inverter size shown in the chip; `fit=partial` means the
+    // catalog couldn't meet the spec exactly and these are closest available.
+    recommended:  get('recommended'),
+    kva:          get('kva'),
+    fit:          get('fit'),
   };
 
   const setFilters = useCallback((updates) => {
@@ -147,6 +156,7 @@ function useFilterState() {
   const activeCount = [
     filters.search, filters.category, filters.listing_type,
     filters.min_price || filters.max_price, filters.is_featured,
+    filters.recommended,
   ].filter(Boolean).length;
 
   return { filters, setFilters, clearFilters, activeCount };
@@ -493,6 +503,7 @@ const BannerSlideshow = ({ onFilterApply, onNavigate }) => {
 
 const StorePage = () => {
   const navigate = useNavigate();
+  const { openCalculator } = useCalculatorModal();
   const { filters, setFilters, clearFilters, activeCount } = useFilterState();
   const { addToCart } = useCart();
   const [adding, setAdding]       = useState({});
@@ -538,14 +549,23 @@ useEffect(() => { scrollToTop(); }, []);
   }, [filters]);
 
   const { data, isLoading, isError, isFetching } = usePublicProducts(queryFilters);
-  const products = data?.products ?? data ?? [];
+  const fetchedProducts = data?.products ?? data ?? [];
+
+  // Calculator capable-systems filter — applied client-side over the fetched
+  // set, preserving the server's order (inverters first, in-stock first).
+  const products = useMemo(() => {
+    if (!filters.recommended) return fetchedProducts;
+    const order = new Map(filters.recommended.split(',').map((id, i) => [id, i]));
+    return fetchedProducts
+      .filter(p => order.has(String(p.id)))
+      .sort((a, b) => order.get(String(a.id)) - order.get(String(b.id)));
+  }, [fetchedProducts, filters.recommended]);
 
   // Derive unique categories and listing_types from ALL products (unfiltered)
   // We fetch all products once without filters for sidebar options
   const { data: allData } = usePublicProducts({});
   const allProducts = allData?.products ?? allData ?? [];
 
-  console.log(allData)
   const categories = useMemo(() =>
     [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort(),
     [allProducts]
@@ -562,12 +582,15 @@ useEffect(() => { scrollToTop(); }, []);
     setAdding(prev => ({ ...prev, [productId]: true }));
     try {
       await addToCart(productId, 1);
+      // User came from the solar calculator and just added a recommended
+      // product — record a silent CRM lead (deduped per calculation).
+      if (filters.recommended) recordAddToCartLead();
     } catch (err) {
       console.error('Add to cart failed:', err);
     } finally {
       setAdding(prev => ({ ...prev, [productId]: false }));
     }
-  }, [addToCart]);
+  }, [addToCart, filters.recommended]);
 
   const toggleSection = (key) =>
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
@@ -726,7 +749,7 @@ useEffect(() => { scrollToTop(); }, []);
         </div>
         <h3 className="text-[15px] font-bold mb-4 leading-tight">Find your solar setup</h3>
         <button
-          onClick={() => navigate('/calculator')}
+          onClick={openCalculator}
           className="w-full bg-[#FFAA14] text-black font-bold py-2 rounded-lg text-[11px] hover:bg-white transition-all"
         >
           Use Solar Calculator
@@ -738,6 +761,13 @@ useEffect(() => { scrollToTop(); }, []);
   // ── Active filter chips ────────────────────────────────────────────────────
   const ActiveChips = () => {
     const chips = [
+      filters.recommended  && {
+        key:      'recommended',
+        label:    filters.fit === 'partial'
+          ? '☀ Closest available systems · our team will confirm sizing'
+          : `☀ Capable systems for your load${filters.kva ? ` · ${filters.kva}kVA inverter` : ''}`,
+        onRemove: () => setFilters({ recommended: '', kva: '', fit: '' }),
+      },
       filters.category     && { key: 'category',     label: filters.category },
       filters.listing_type && { key: 'listing_type', label: filters.listing_type },
       (filters.min_price || filters.max_price) && {
@@ -810,7 +840,8 @@ useEffect(() => { scrollToTop(); }, []);
             `}</style>
             <BannerSlideshow
               onFilterApply={(f) => setFilters(f)}
-              onNavigate={(href) => navigate(href)}
+              // The calculator banner opens the modal in place; other CTAs route
+              onNavigate={(href) => href === '/calculator' ? openCalculator() : navigate(href)}
             />
           </div>
 

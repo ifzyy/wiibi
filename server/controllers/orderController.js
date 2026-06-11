@@ -16,10 +16,7 @@ import {
 } from '../services/OrderService.js';
 import {
   initiateRefund,
-} from '../services/MockPaymentService.js';
-// ─── TO GO LIVE: swap the line above for: ────────────────────────────────────
-// import { initiateRefund } from '../services/PaystackService.js';
-// ─────────────────────────────────────────────────────────────────────────────
+} from '../services/paymentProvider.js';
 
 /* ── Schemas ─────────────────────────────────────────────────────────────── */
 
@@ -51,6 +48,8 @@ const updateStatusSchema = Joi.object({
   note:           Joi.string().max(500).allow('', null),
   trackingNumber: Joi.string().max(100).allow('', null),
   carrier:        Joi.string().max(100).allow('', null),
+  // Estimated delivery date shown to the customer — YYYY-MM-DD
+  expectedDelivery: Joi.date().iso().allow(null),
   refund: Joi.object({
     amount: Joi.number().positive().required(),
     reason: Joi.string().max(500).allow('', null),
@@ -105,7 +104,9 @@ const executeRefund = async ({
   refundAmount = null,
 }) => {
   // Step 1 — create pending refund record in DB (own transaction inside initiateRefundFlow)
-  const { refund, refundAmount: finalAmt } = await initiateRefundFlow(orderId, {
+  // Capture `order` so we can use order.createdAt for the Paystack 20-day window check.
+  // Using refund.createdAt (just created) would make the window check always pass — wrong.
+  const { refund, order: refundOrder, refundAmount: finalAmt } = await initiateRefundFlow(orderId, {
     amount:  refundAmount,
     reason,
     method,
@@ -117,10 +118,10 @@ const executeRefund = async ({
   let manualRequired = false;
   let finalMethod    = method;
 
-  const hasReference        = !!paymentReference;
-  const chargeAgeMs         = Date.now() - new Date(refund.createdAt).getTime();
-  const beyondWindow        = chargeAgeMs > PAYSTACK_REFUND_WINDOW_MS;
-  const canUsePaystack      = hasReference && !beyondWindow && method === 'Paystack';
+  const hasReference   = !!paymentReference;
+  const chargeAgeMs    = Date.now() - new Date(refundOrder.createdAt).getTime();
+  const beyondWindow   = chargeAgeMs > PAYSTACK_REFUND_WINDOW_MS;
+  const canUsePaystack = hasReference && !beyondWindow && method === 'Paystack';
 
   // Determine if we must force manual
   if (method === 'Paystack' && (!hasReference || beyondWindow)) {
@@ -132,7 +133,7 @@ const executeRefund = async ({
     );
   }
 
-  // Step 2 — call Paystack OUTSIDE the DB transaction
+  // Step 2 — call provider OUTSIDE the DB transaction
   if (canUsePaystack) {
     try {
       const gatewayResult = await initiateRefund({
@@ -140,10 +141,16 @@ const executeRefund = async ({
         amount:       toKobo(finalAmt),
         merchantNote: reason,
       });
+
+      // status:false means the provider returned a structured failure (not an exception)
+      if (!gatewayResult?.status) {
+        throw new Error(gatewayResult?.message || 'Refund declined by payment provider');
+      }
+
       gatewayRef  = gatewayResult?.data?.refund_reference ?? null;
       finalStatus = 'pending';
     } catch (err) {
-      console.error('[Refund] Paystack initiateRefund failed:', err.message);
+      console.error('[Refund] Provider initiateRefund failed:', err.message);
       finalMethod    = 'Bank Transfer';
       finalStatus    = 'manual_required';
       manualRequired = true;
@@ -162,7 +169,6 @@ const executeRefund = async ({
 /* ── Customer handlers ───────────────────────────────────────────────────── */
 
 export const handleCheckout = asyncHandler(async (req, res) => {
-  console.log('Received checkout request with body:', req.body);
   const { error, value } = checkoutSchema.validate(req.body);
   if (error) throw new ValidationError(error.details[0].message);
 
@@ -289,6 +295,7 @@ export const handleUpdateStatus = asyncHandler(async (req, res) => {
     note:              value.note,
     trackingNumber:    value.trackingNumber,
     carrier:           value.carrier,
+    expectedDelivery:  value.expectedDelivery ?? null,
     refund:            value.refund ?? null,
     actorId:           req.user.id,
   });
@@ -342,7 +349,14 @@ export const handleExportOrders = asyncHandler(async (req, res) => {
   const result        = await getAllOrders({ page: 1, limit: 5000, status, paymentStatus });
   const orders        = result.orders ?? [];
 
-  const esc     = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  // Quote for CSV, and neutralise spreadsheet formula injection: customer-
+  // controlled values (name, email) starting with = + - @ would otherwise
+  // execute as formulas when an admin opens the export in Excel.
+  const esc = (v) => {
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const headers = ['Order No.','Customer','Email','Phone','Total','Currency','Status','Payment','Tracking','Created At'];
 
   const rows = orders.map(o => {

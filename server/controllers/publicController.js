@@ -482,3 +482,28 @@ export const getProjectBySlug = async (req, res) => {
 
 // no-op so any file that imports invalidatePageCache doesn't break
 export const invalidatePageCache = () => {};
+
+// ── Public settings ───────────────────────────────────────────────────────────
+// Exposes is_public global settings as a flat { key: value } map. Used by the
+// storefront for values like delivery_fee (display only — checkout recomputes
+// totals server-side). Cached 10 min; invalidated when an admin saves settings.
+import cache, { TTL } from '../middleware/Cachemiddleware.js';
+
+export const PUBLIC_SETTINGS_CACHE_KEY = 'settings:public';
+
+export const getPublicSettings = async (_req, res) => {
+  try {
+    const settings = await cache.getOrSet(PUBLIC_SETTINGS_CACHE_KEY, async () => {
+      const rows = await db.GlobalSetting.findAll({
+        where:      { isPublic: true },
+        attributes: ['key', 'value'],
+      });
+      return Object.fromEntries(rows.map(r => [r.key, r.value]));
+    }, TTL.MEDIUM);
+
+    return res.json(settings);
+  } catch (err) {
+    console.error('getPublicSettings error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};

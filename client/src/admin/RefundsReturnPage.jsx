@@ -91,8 +91,9 @@ const StatusBadge = ({ status }) => {
     return_requested: { label: 'Return Requested', color: C.amber    },
     returned:         { label: 'Returned',          color: C.green    },
     manual_required:  { label: 'Manual Required',   color: C.red      },
-    pending:          { label: 'Pending',            color: C.inkFaint },
+    pending:          { label: 'Pending',            color: C.amber    },
     completed:        { label: 'Completed',          color: C.green    },
+    failed:           { label: 'Failed',             color: C.red      },
   };
   const cfg = map[status] ?? { label: status, color: C.inkFaint };
   return <Badge label={cfg.label} color={cfg.color} />;
@@ -472,25 +473,39 @@ const ReturnRequestsTab = ({ onToast }) => {
   );
 };
 
-/* ── Manual Refunds Tab ──────────────────────────────────────────────────── */
-const ManualRefundsTab = ({ onToast }) => {
+/* ── Refunds Tab (all statuses) ──────────────────────────────────────────── */
+const REFUND_FILTERS = [
+  { key: 'all',             label: 'All'             },
+  { key: 'pending',         label: 'Pending'         },
+  { key: 'manual_required', label: 'Manual Required' },
+  { key: 'completed',       label: 'Completed'       },
+  { key: 'failed',          label: 'Failed'          },
+];
+
+const RefundsTab = ({ onToast }) => {
   const [refunds,    setRefunds]    = useState([]);
+  const [counts,     setCounts]     = useState({});
   const [loading,    setLoading]    = useState(true);
   const [pagination, setPagination] = useState({ page: 1, total: 0 });
+  const [status,     setStatus]     = useState('all');
   const [modal,      setModal]      = useState(null); // refund
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/returns/manual-refunds');
-      setRefunds(res.data.data ?? []);
-      setPagination(res.data.pagination ?? { page: 1, total: 0 });
+      const params = { page: 1, limit: 50 };
+      if (status !== 'all') params.status = status;
+      const res  = await api.get('/returns/refunds', { params });
+      const data = res.data.data ?? {};
+      setRefunds(data.refunds ?? []);
+      setCounts(data.counts ?? {});
+      setPagination(data.pagination ?? { page: 1, total: 0 });
     } catch (e) {
-      onToast(e?.response?.data?.message ?? 'Failed to load manual refunds', 'error');
+      onToast(e?.response?.data?.message ?? 'Failed to load refunds', 'error');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [status]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -499,43 +514,62 @@ const ManualRefundsTab = ({ onToast }) => {
     load();
   };
 
+  const totalAll      = Object.values(counts).reduce((s, n) => s + n, 0);
+  const countFor      = (key) => key === 'all' ? totalAll : (counts[key] ?? 0);
+  const manualCount   = counts.manual_required ?? 0;
+  // Pending Paystack refunds auto-complete via the refund.processed webhook in
+  // production; "Mark Complete" is the manual override (and the dev-mode path).
+  const canComplete   = (r) => r.status === 'pending' || r.status === 'manual_required';
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div>
-          <p style={{ margin: 0, fontSize: 13, color: C.inkFaint }}>
-            {loading ? 'Loading…' : `${pagination.total ?? refunds.length} pending manual refunds`}
-          </p>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: C.inkFaint, lineHeight: 1.5 }}>
-            These refunds could not be processed via Paystack — either the 20-day window passed, or the payment reference was missing. Process each one manually and mark complete.
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        {/* Status filter chips */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {REFUND_FILTERS.map(f => {
+            const active = status === f.key;
+            return (
+              <button key={f.key} onClick={() => setStatus(f.key)} style={{
+                padding: '7px 12px', borderRadius: 99, cursor: 'pointer',
+                border:     `1.5px solid ${active ? C.amber : C.border}`,
+                background: active ? C.amberBg : C.white,
+                color:      active ? C.ink : C.inkMid,
+                fontWeight: active ? 700 : 500, fontSize: 12,
+                fontFamily: 'Geist, sans-serif', whiteSpace: 'nowrap',
+              }}>
+                {f.label} <span style={{ opacity: 0.6, fontWeight: 700 }}>{countFor(f.key)}</span>
+              </button>
+            );
+          })}
         </div>
         <Btn variant="secondary" small onClick={load} disabled={loading}>↺ Refresh</Btn>
       </div>
 
-      {refunds.length > 0 && (
+      {manualCount > 0 && (
         <div style={{ padding: '10px 14px', background: C.redBg, border: '1px solid #F5C6C2', borderRadius: 8, marginBottom: 16, fontSize: 12, color: C.red, fontWeight: 600 }}>
-          ⚠ {refunds.length} refund{refunds.length !== 1 ? 's' : ''} require manual processing — total outstanding: {fmt(refunds.reduce((s, r) => s + parseFloat(r.amount), 0))}
+          ⚠ {manualCount} refund{manualCount !== 1 ? 's' : ''} could not go through Paystack (20-day window passed or missing payment reference) — process via bank transfer and mark complete.
         </div>
       )}
 
       <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 160px 180px', padding: '10px 20px', background: C.bg, borderBottom: `1px solid ${C.border}` }}>
-          {['Customer / Order', 'Amount', 'Method', 'Created', 'Actions'].map(h => (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 140px 140px 150px', padding: '10px 20px', background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+          {['Customer / Order', 'Amount', 'Method', 'Status', 'Created', 'Actions'].map(h => (
             <span key={h} style={{ fontSize: 10, fontWeight: 800, color: C.inkFaint, textTransform: 'uppercase', letterSpacing: 0.8 }}>{h}</span>
           ))}
         </div>
 
         {loading && [1, 2, 3].map(i => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 160px 180px', padding: '16px 20px', borderBottom: `1px solid ${C.border}`, gap: 12 }}>
-            {[1, 2, 3, 4, 5].map(j => <Skeleton key={j} w={j === 1 ? '80%' : '60%'} />)}
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 140px 140px 150px', padding: '16px 20px', borderBottom: `1px solid ${C.border}`, gap: 12 }}>
+            {[1, 2, 3, 4, 5, 6].map(j => <Skeleton key={j} w={j === 1 ? '80%' : '60%'} />)}
           </div>
         ))}
 
         {!loading && refunds.length === 0 && (
           <div style={{ padding: 48, textAlign: 'center' }}>
-            <p style={{ margin: '0 0 8px', fontSize: 22 }}>✓</p>
-            <p style={{ margin: 0, fontSize: 13, color: C.green, fontWeight: 600 }}>No pending manual refunds.</p>
+            <p style={{ margin: '0 0 8px', fontSize: 22 }}>💸</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.inkFaint }}>
+              {status === 'all' ? 'No refunds yet.' : `No ${REFUND_FILTERS.find(f => f.key === status)?.label.toLowerCase()} refunds.`}
+            </p>
           </div>
         )}
 
@@ -546,7 +580,7 @@ const ManualRefundsTab = ({ onToast }) => {
             : (order.guestEmail ?? 'Guest');
 
           return (
-            <div key={refund.id} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 160px 180px', padding: '14px 20px', borderBottom: i < refunds.length - 1 ? `1px solid ${C.border}` : 'none', alignItems: 'center' }}>
+            <div key={refund.id} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 110px 140px 140px 150px', padding: '14px 20px', borderBottom: i < refunds.length - 1 ? `1px solid ${C.border}` : 'none', alignItems: 'center' }}>
               <div>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: C.ink }}>{customerName}</p>
                 <p style={{ margin: '2px 0 0', fontSize: 11, color: C.amber, fontFamily: 'Geist Mono, monospace', fontWeight: 700 }}>{order.orderNumber}</p>
@@ -556,11 +590,18 @@ const ManualRefundsTab = ({ onToast }) => {
               </div>
               <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{fmt(refund.amount)}</span>
               <span style={{ fontSize: 12, color: C.inkMid, fontWeight: 600 }}>{refund.method}</span>
+              <StatusBadge status={refund.status} />
               <span style={{ fontSize: 12, color: C.inkFaint }}>{fmtDT(refund.createdAt)}</span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Btn small variant="success" onClick={() => setModal(refund)}>
-                  Mark Complete
-                </Btn>
+                {canComplete(refund) ? (
+                  <Btn small variant="success" onClick={() => setModal(refund)}>
+                    Mark Complete
+                  </Btn>
+                ) : (
+                  <span style={{ fontSize: 12, color: refund.status === 'completed' ? C.green : C.inkFaint, fontWeight: 600 }}>
+                    {refund.status === 'completed' ? '✓ Done' : '—'}
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -580,7 +621,7 @@ const ManualRefundsTab = ({ onToast }) => {
 
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function RefundReturnsPage() {
-  const [activeTab, setActiveTab] = useState('returns');
+  const [activeTab, setActiveTab] = useState('refunds');
   const [toast,     setToast]     = useState(null);
 
   const showToast = (msg, type = 'success') => {
@@ -589,8 +630,8 @@ export default function RefundReturnsPage() {
   };
 
   const TABS = [
+    { key: 'refunds', label: 'Refunds'         },
     { key: 'returns', label: 'Return Requests' },
-    { key: 'manual',  label: 'Manual Refunds'  },
   ];
 
   return (
@@ -634,8 +675,8 @@ export default function RefundReturnsPage() {
           </div>
 
           <div style={{ padding: '20px' }}>
+            {activeTab === 'refunds' && <RefundsTab        onToast={showToast} />}
             {activeTab === 'returns' && <ReturnRequestsTab onToast={showToast} />}
-            {activeTab === 'manual'  && <ManualRefundsTab  onToast={showToast} />}
           </div>
         </div>
       </div>

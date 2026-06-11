@@ -56,11 +56,17 @@ api.interceptors.response.use(
     const status   = error.response?.status;
     const code     = error.response?.data?.code;
 
-    // Only refresh when a token WAS present but expired.
-    // NO_TOKEN = no session (guest / logged out) — don't attempt refresh.
+    // Refresh when the token expired, OR when no token arrived but this
+    // browser had a session (isLoggedIn flag) — e.g. the access cookie was
+    // cleared while the 7-day refresh cookie is still valid. Plain guests
+    // (no flag) never trigger a refresh.
+    //
+    // NOTE: the parentheses are load-bearing. Without them, && binds tighter
+    // than ||, letting TOKEN_EXPIRED bypass the _retry guard — refresh loops.
+    const hadSession = localStorage.getItem('isLoggedIn') === 'true';
     const shouldRefresh =
       status === 401 &&
-      code === 'TOKEN_EXPIRED' || code === 'NO_TOKEN' &&
+      (code === 'TOKEN_EXPIRED' || (code === 'NO_TOKEN' && hadSession)) &&
       !original._retry &&
       !original.url?.includes('/auth/refresh');
 

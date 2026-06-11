@@ -85,13 +85,14 @@ export const useOrders = () => {
   };
 
   /* ── Update handler ────────────────────────────────────────────────────── */
-  const handleSave = async ({ orderId, fStatus, pStatus, note, tracking, carrier, refundAmt, refundReason, refundMethod }) => {
+  const handleSave = async ({ orderId, fStatus, pStatus, note, tracking, carrier, eta, refundAmt, refundReason, refundMethod }) => {
     const payload = {
-      status:         fStatus,
-      paymentStatus:  pStatus,
-      note:           note     || undefined,
-      trackingNumber: tracking || undefined,
-      carrier:        carrier  || undefined,
+      status:           fStatus,
+      paymentStatus:    pStatus,
+      note:             note     || undefined,
+      trackingNumber:   tracking || undefined,
+      carrier:          carrier  || undefined,
+      expectedDelivery: eta      || undefined,
       ...(refundAmt > 0 && {
         refund: { amount: refundAmt, reason: refundReason || "Manual refund", method: refundMethod },
       }),
@@ -100,7 +101,7 @@ export const useOrders = () => {
     // Optimistic update
     setOrders(prev => prev.map(o =>
       (o.id ?? o._id) === orderId
-        ? { ...o, fulfillmentStatus: fStatus, status: fStatus, paymentStatus: pStatus, trackingNumber: tracking || o.trackingNumber, carrier: carrier || o.carrier, updatedAt: new Date().toISOString() }
+        ? { ...o, fulfillmentStatus: fStatus, status: fStatus, paymentStatus: pStatus, trackingNumber: tracking || o.trackingNumber, carrier: carrier || o.carrier, expectedDelivery: eta || o.expectedDelivery, updatedAt: new Date().toISOString() }
         : o
     ));
 

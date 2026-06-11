@@ -11,6 +11,7 @@ import {
   buildPaginationMeta,
   parseSortOrder,
 } from '../utils/blogUtils.js';
+import { bumpBlogView } from '../utils/viewCounter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The paranoid:true on Blog causes Sequelize to inject `deleted_at IS NULL`
@@ -230,8 +231,9 @@ export const getPublishedBlogBySlug = async (req, res) => {
     const mediaMap = await fetchMediaForBlogs([id]);
     const tagMap   = await fetchTagsForBlogs([id]);
 
-    // Increment view count asynchronously — don't block response
-    blog.increment('view_count').catch(() => {});
+    // Buffered in memory and flushed in batches — one UPDATE per blog per
+    // flush interval instead of one per page view.
+    bumpBlogView(id);
 
     return res.status(200).json({
       blog: toClientBlog(blog.toJSON(), mediaMap[id] ?? [], tagMap[id] ?? []),

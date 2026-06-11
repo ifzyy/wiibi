@@ -16,7 +16,7 @@ import {
   verifyGoogleIdToken,
   exchangeGoogleCode,
   oauthLogin,
-} from '../services/OauthService.js';
+} from '../services/OAuthService.js';
 import { handlePostAuthCleanup } from './authController.js';
 
 const getIp = (req) =>
@@ -26,7 +26,10 @@ const IS_PROD    = process.env.NODE_ENV === 'production';
 const cookieBase = { httpOnly: true, secure: IS_PROD, sameSite: 'strict', path: '/' };
 
 const setAuthCookies = (res, { accessToken, refreshToken }) => {
-  res.cookie('accessToken',  accessToken,  { ...cookieBase, maxAge: 15 * 60 * 1000 });
+  // Access cookie lives as long as the refresh window so a returning browser
+  // still presents the (expired) JWT → server answers TOKEN_EXPIRED → client
+  // silently refreshes. See ACCESS_COOKIE comment in authController.js.
+  res.cookie('accessToken',  accessToken,  { ...cookieBase, maxAge: 7 * 24 * 60 * 60 * 1000 });
   res.cookie('refreshToken', refreshToken, { ...cookieBase, maxAge: 7 * 24 * 60 * 60 * 1000 });
 };
 

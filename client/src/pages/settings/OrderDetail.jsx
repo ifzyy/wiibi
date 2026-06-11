@@ -59,7 +59,11 @@ const Skel = ({ w = '100%', h = 14, r = 6 }) => (
 const buildTimeline = (order) => {
   const rows      = order?.timeline ?? [];
   const status    = order?.status   ?? 'pending';
-  const find      = (s) => rows.find(r => r.status === s);
+  // LATEST matching row, not first — admins can post repeated shipment
+  // updates at the same status ("Arrived Ibadan hub") and the newest one
+  // is what the customer should see on the step.
+  const find = (statuses) =>
+    [...rows].reverse().find(r => statuses.includes(r.status));
 
   // Map order statuses to the 4 customer-facing steps
   const DONE_AT = {
@@ -69,10 +73,10 @@ const buildTimeline = (order) => {
     delivered:   ['delivered'],
   };
 
-  const row = (key, label, trackingStatus, descFn) => {
-    const trackingRow  = find(trackingStatus);
+  const row = (key, label, trackingStatuses, descFn) => {
+    const trackingRow  = find(trackingStatuses);
     const done         = DONE_AT[key].includes(status);
-    const isLatest     = status === trackingStatus || (key === 'out_delivery' && status === 'in_transit');
+    const isLatest     = trackingStatuses.includes(status);
     return {
       key, label, done, isLatest,
       time:     trackingRow?.createdAt ?? null,
@@ -81,10 +85,10 @@ const buildTimeline = (order) => {
   };
 
   return [
-    row('confirmed',   'Order Confirmed',   'pending',    () => 'Order placed successfully'),
-    row('processing',  'Being Prepared',    'processing', () => 'Your items are being packed'),
-    row('out_delivery','Out for Delivery',  'shipped',    () => 'On the way to you'),
-    row('delivered',   'Delivered',         'delivered',  () => `Delivered to ${order?.shippingAddress?.city ?? 'your address'}`),
+    row('confirmed',   'Order Confirmed',   ['pending'],                () => 'Order placed successfully'),
+    row('processing',  'Being Prepared',    ['processing'],             () => 'Your items are being packed'),
+    row('out_delivery','Out for Delivery',  ['shipped', 'in_transit'],  () => 'On the way to you'),
+    row('delivered',   'Delivered',         ['delivered'],              () => `Delivered to ${order?.shippingAddress?.city ?? 'your address'}`),
   ];
 };
 
@@ -272,7 +276,17 @@ const OrderDetail = () => {
   const [error,      setError]      = useState(null);
   const [showCancel, setShowCancel] = useState(false);
   const [cancelMsg,  setCancelMsg]  = useState(null);
-  const [paymentOk,  setPaymentOk]  = useState(params.get('payment') === 'success');
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // PAYMENT SAFETY: the success banner must reflect the BACKEND-confirmed
+  // payment state, never the URL. `?payment=success` only decides whether the
+  // user just came from checkout and should see the celebratory banner — the
+  // source of truth is order.paymentStatus, fetched from the server below.
+  // Without this, anyone could append ?payment=success to an unpaid order and
+  // see a fake "Payment confirmed" message.
+  const cameFromCheckout = params.get('payment') === 'success';
+  const paymentOk =
+    cameFromCheckout && !bannerDismissed && order?.paymentStatus === 'paid';
 
   const load = useCallback(() => {
     if (!orderId) return;
@@ -351,7 +365,7 @@ const OrderDetail = () => {
             <CheckCircle size={15} className="text-green-500 shrink-0"/>
             <p className="text-sm font-semibold text-green-800">Payment confirmed — your order is being prepared.</p>
           </div>
-          <button onClick={() => setPaymentOk(false)} className="text-green-400 hover:text-green-600 text-lg leading-none shrink-0">×</button>
+          <button onClick={() => setBannerDismissed(true)} className="text-green-400 hover:text-green-600 text-lg leading-none shrink-0">×</button>
         </div>
       )}
 
@@ -379,17 +393,19 @@ const OrderDetail = () => {
               <p className="text-[10px] text-[#B8A98A] font-bold uppercase tracking-wide mb-1 flex items-center justify-end gap-1"><Clock size={10}/> Placed</p>
               <p className="text-sm font-bold">{fmtD(order?.createdAt)}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-[#B8A98A] font-bold uppercase tracking-wide mb-1 flex items-center justify-end gap-1">
-                <Truck size={10} style={{color:'#FFAA14'}}/> Expected
-              </p>
-              <p className="text-sm font-bold">
-                {order?.expectedDelivery
-                  ? fmtD(order.expectedDelivery)
-                  : <span className="text-[#B8A98A] font-normal text-xs">TBD</span>
-                }
-              </p>
-            </div>
+            {order?.status !== 'cancelled' && (
+              <div className="text-right">
+                <p className="text-[10px] text-[#B8A98A] font-bold uppercase tracking-wide mb-1 flex items-center justify-end gap-1">
+                  <Truck size={10} style={{color:'#FFAA14'}}/> Expected
+                </p>
+                <p className="text-sm font-bold">
+                  {order?.expectedDelivery
+                    ? fmtD(order.expectedDelivery)
+                    : <span className="text-[#B8A98A] font-normal text-xs">TBD</span>
+                  }
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -448,6 +464,26 @@ const OrderDetail = () => {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Full update history — every admin-posted shipment update */}
+          {!isCancelled && (order?.timeline?.length ?? 0) > 1 && (
+            <details className="mt-8">
+              <summary className="text-xs font-bold text-[#B8A98A] cursor-pointer select-none hover:text-[#1A1102] transition-colors">
+                View all updates ({order.timeline.length})
+              </summary>
+              <div className="mt-4 space-y-3 pl-1">
+                {[...order.timeline].reverse().map((t) => (
+                  <div key={t.id ?? t.createdAt} className="flex items-start gap-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#FFAA14] mt-1.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-[#1A1102] font-medium leading-relaxed">{t.note}</p>
+                      <p className="text-[10px] text-[#B8A98A] mt-0.5">{fmtDT(t.createdAt)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
           {/* Cancelled state */}

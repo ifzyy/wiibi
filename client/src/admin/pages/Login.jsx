@@ -26,13 +26,12 @@ export const LoginScreen = ({ onLogin }) => {
     resetError();
     setLoading(true);
     try {
-      const res =await api.post('/auth/login', body, {
-  headers: { 'X-Guest-Token': localStorage.getItem('guestToken') ?? '' }
-});
+      const res = await api.post('/auth/login', { phoneNumber, password });
       if (res.data.data?.user?.role !== 'admin') {
         setError('This account does not have admin privileges.');
         return;
       }
+      localStorage.setItem('isLoggedIn', 'true');
       onLogin();
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid phone number or password');
@@ -66,6 +65,7 @@ export const LoginScreen = ({ onLogin }) => {
         setError('This account does not have admin privileges.');
         return;
       }
+      localStorage.setItem('isLoggedIn', 'true');
       onLogin();
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid or expired OTP');

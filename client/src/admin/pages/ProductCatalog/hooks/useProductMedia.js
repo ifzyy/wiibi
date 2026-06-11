@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
-import axios from "axios";
 import { toast } from "react-toastify";
-import { API_BASE } from "../constants";
+import { adminApi } from "../../../utils/api.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Media staging model
@@ -39,12 +38,14 @@ import { API_BASE } from "../constants";
  *       — called by ProductDrawer immediately after createProduct resolves
  *   hasPendingMedia   boolean — true if there's anything staged
  */
+// NOTE: `token` is accepted for backward-compatible call sites but no longer
+// used — auth now rides the shared cookie-based adminApi (httpOnly cookie +
+// refresh). The old `Bearer ${token}` over raw axios sent no cookie and a token
+// this app never issues, so attach calls were effectively unauthenticated.
 export const useProductMedia = (token, productId = null) => {
   // Staging queue for the "create new product" flow
   const [pendingFeatured, setPendingFeatured] = useState(null);       // { id, url }
   const [pendingGallery,  setPendingGallery]  = useState([]);          // [{ id, url }]
-
-  const authHeaders = { Authorization: `Bearer ${token}` };
 
   // ── Stage a featured image ───────────────────────────────────────────────
   // Replaces any previous staged featured image (only one allowed).
@@ -81,10 +82,9 @@ export const useProductMedia = (token, productId = null) => {
     if (!pendingFeatured && pendingGallery.length === 0) return;
 
     try {
-      await axios.post(
-        `${API_BASE}/admin/products/${targetProductId}/media/attach`,
-        { featured: pendingFeatured, gallery: pendingGallery },
-        { headers: { ...authHeaders, "Content-Type": "application/json" } }
+      await adminApi.post(
+        `/admin/products/${targetProductId}/media/attach`,
+        { featured: pendingFeatured, gallery: pendingGallery }
       );
       clearPending();
     } catch (err) {
@@ -94,7 +94,7 @@ export const useProductMedia = (token, productId = null) => {
       );
       console.error("attachToProduct error:", err);
     }
-  }, [pendingFeatured, pendingGallery, token, clearPending]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingFeatured, pendingGallery, clearPending]);
 
   const hasPendingMedia = !!(pendingFeatured || pendingGallery.length > 0);
 

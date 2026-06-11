@@ -35,3 +35,14 @@ export const passwordRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
 });
+
+// Stricter limiter for money-moving endpoints (initialize / verify). Prevents
+// brute-forcing references or hammering the gateway. NOT applied to /webhook —
+// that is provider-driven and signature-verified.
+export const paymentRateLimit = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             parseInt(process.env.PAYMENT_RATE_LIMIT_MAX || '30', 10),
+  handler:         jsonHandler('Too many payment attempts. Please wait and try again.'),
+  standardHeaders: true,
+  legacyHeaders:   false,
+});

@@ -31,7 +31,12 @@ import crypto     from 'crypto';
 import db         from '../models/index.js';
 import { NotFoundError, AppError, ConflictError } from '../utils/AppError.js';
 import { calculateCartTotal } from './Cart.services.js';
+import { getEmitter }         from '../utils/emitter.js';
 import { Sequelize, Op }      from 'sequelize';
+import {
+  sendOrderStatusEmail,
+  sendPaymentConfirmationEmail,
+} from './EmailService.js';
 
 /* ── Status machine ───────────────────────────────────────────────────────── */
 
@@ -74,6 +79,46 @@ const timelineInclude = {
   model: db.OrderTracking,
   as:    'timeline',
   order: [['createdAt', 'ASC']],
+};
+
+/* ── Delivery fee ─────────────────────────────────────────────────────────── */
+
+/**
+ * Resolves the delivery fee for an order.
+ *
+ * Rule: if any cart item's product defines its own delivery_fee, the order is
+ * charged the HIGHEST product fee in the cart — one delivery, priced by the
+ * bulkiest item (an inverter ships differently from a wall socket). If no
+ * product overrides, the admin-configurable global `delivery_fee` setting
+ * applies. The global setting row is created with a 0 default on first use so
+ * the admin Settings page always has something to edit; each order snapshots
+ * the value it was actually charged.
+ *
+ * @param {Array} [items] — cart items with product.delivery_fee loaded
+ */
+export const getDeliveryFee = async (items = []) => {
+  const productFees = items
+    .map(i => parseFloat(i.product?.delivery_fee))
+    .filter(f => Number.isFinite(f) && f >= 0);
+
+  if (productFees.length) return Math.max(...productFees);
+
+  const [setting] = await db.GlobalSetting.findOrCreate({
+    where:    { key: 'delivery_fee' },
+    defaults: {
+      key:         'delivery_fee',
+      value:       0,
+      type:        'number',
+      group:       'commerce',
+      label:       'Delivery Fee',
+      description: 'Default delivery fee in ₦ added to orders at checkout. Products can override it; orders charge the highest product fee in the cart. Set to 0 for free delivery.',
+      isPublic:    true,
+      isSystem:    false,
+    },
+  });
+
+  const fee = parseFloat(setting.value);
+  return Number.isFinite(fee) && fee > 0 ? fee : 0;
 };
 
 /* ── Private helpers ──────────────────────────────────────────────────────── */
@@ -226,7 +271,8 @@ export const createOrderFromCart = async (userId, {
   guestEmail     = null,
   guestToken     = null,
 }) => {
-  console.log(`[OrderService] Starting checkout for userId=${userId} guestToken=${guestToken} idempotencyKey=${idempotencyKey} guestEmail=${guestEmail} `);
+  // Avoid logging PII (email / guest token). IDs and presence flags only.
+  console.log(`[OrderService] Starting checkout userId=${userId ?? 'guest'} hasIdempotencyKey=${!!idempotencyKey}`);
   // ── 1. Resolve email BEFORE the transaction ───────────────────────────────
   //
   // For logged-in users: checks guestEmail first (sent by form), then falls
@@ -263,7 +309,7 @@ export const createOrderFromCart = async (userId, {
         include: [{
           model:      db.Product,
           as:         'product',
-          attributes: ['id', 'name', 'slug', 'featured_image_url', 'price', 'sale_price', 'stock', 'is_visible'],
+          attributes: ['id', 'name', 'slug', 'featured_image_url', 'price', 'sale_price', 'stock', 'is_visible', 'delivery_fee', 'listing_type'],
           lock:       transaction.LOCK.UPDATE,  // lock each product row → no overselling
         }],
       }],
@@ -276,8 +322,16 @@ export const createOrderFromCart = async (userId, {
     // ── 6. Validate items ─────────────────────────────────────────────────
     validateCartItems(cart.items);
 
-    const totalAmount      = calculateCartTotal(cart.items);
+    const subtotal         = calculateCartTotal(cart.items);
+    const deliveryFee      = await getDeliveryFee(cart.items);
+    const totalAmount      = subtotal + deliveryFee;
     const paymentReference = generatePaymentReference();
+
+    // Default delivery estimate: ~7 days for normal items, ~30 days when the
+    // order contains a full system package (engineer survey + installation).
+    // Admins refine the date from the order management modal.
+    const needsSurvey      = cart.items.some(i => i.product?.listing_type === 'package');
+    const expectedDelivery = new Date(Date.now() + (needsSurvey ? 30 : 7) * 24 * 60 * 60 * 1000);
 
     // ── 7. Create order ───────────────────────────────────────────────────
     const order = await db.Order.create({
@@ -290,6 +344,8 @@ export const createOrderFromCart = async (userId, {
       status:          'pending',
       paymentStatus:   'unpaid',
       totalAmount,
+      deliveryFee,
+      expectedDelivery,
       currency,
       shippingAddress,
       paymentReference,
@@ -329,6 +385,13 @@ export const createOrderFromCart = async (userId, {
     // Cart is still active — user can retry without any cleanup.
     if (err.name === 'SequelizeDeadlockError' || err.name === 'SequelizeTimeoutError') {
       throw new AppError('Order processing temporarily unavailable. Please try again.', 503);
+    }
+    // A concurrent request with the same idempotencyKey won the INSERT race.
+    // The unique constraint stopped the duplicate order — return the winner
+    // instead of surfacing a raw 500 to the client.
+    if (err.name === 'SequelizeUniqueConstraintError' && idempotencyKey) {
+      const existing = await resolveIdempotentOrder(idempotencyKey, userId, guestToken);
+      if (existing) return existing;
     }
     throw err;
   }
@@ -377,6 +440,29 @@ export const handlePaymentSuccess = async (paymentReference, gatewayData = {}) =
       throw new AppError('Cannot confirm payment for a cancelled order', 422);
     }
 
+    // SECURITY: confirm the gateway actually collected the full amount in the
+    // correct currency before marking the order paid. Without this, a 'success'
+    // for a smaller charge (or a replayed cheaper reference) would yield free
+    // goods. Amounts from the gateway are in kobo (NGN × 100).
+    const paidKobo     = Number.parseInt(gatewayData.amount, 10);
+    const expectedKobo = Math.round(parseFloat(order.totalAmount) * 100);
+    if (!Number.isFinite(paidKobo) || paidKobo < expectedKobo) {
+      await transaction.rollback();
+      throw new AppError(
+        `Payment amount mismatch for ${paymentReference}: ` +
+        `received ${Number.isFinite(paidKobo) ? paidKobo : 'none'} kobo, expected ${expectedKobo} kobo`,
+        422
+      );
+    }
+    const paidCurrency = (gatewayData.currency ?? order.currency ?? 'NGN').toUpperCase();
+    if (paidCurrency !== (order.currency ?? 'NGN').toUpperCase()) {
+      await transaction.rollback();
+      throw new AppError(
+        `Payment currency mismatch for ${paymentReference}: received ${paidCurrency}, expected ${order.currency}`,
+        422
+      );
+    }
+
     // Advance to processing if still pending; don't regress if already further along.
     const nextStatus = VALID_TRANSITIONS[order.status]?.includes('processing')
       ? 'processing'
@@ -398,6 +484,25 @@ export const handlePaymentSuccess = async (paymentReference, gatewayData = {}) =
     );
 
     await transaction.commit();
+
+    // Notify the admin dashboard in real time. Best-effort — a listener error
+    // must never roll back or fail the now-committed payment.
+    try {
+      getEmitter().emit('order:paid', {
+        orderId:     order.id,
+        orderNumber: order.orderNumber,
+        amount:      parseFloat(order.totalAmount),
+        currency:    order.currency ?? 'NGN',
+      });
+    } catch { /* non-fatal */ }
+
+    // Receipt email — fire-and-forget AFTER commit (rule 2: no external calls
+    // inside a transaction). EmailService never throws.
+    sendPaymentConfirmationEmail(order, {
+      amountNgn,
+      reference: paymentReference,
+    });
+
     return { order: await getOrderById(order.id), alreadyPaid: false };
 
   } catch (err) {
@@ -509,20 +614,37 @@ export const initiateRefundFlow = async (orderId, {
       throw new AppError('Order has not been paid — nothing to refund', 422);
     }
 
-    // Double-refund guard
+    // Double-refund guard — block if ANY non-failed refund already exists.
+    // 'manual_required' and 'processing' MUST be included: a manual bank-transfer
+    // refund still represents money owed/paid out, so issuing another on top of it
+    // would over-refund the order.
+    const REFUND_ACTIVE = ['pending', 'processing', 'completed', 'manual_required'];
     const existingRefund = await db.Refund.findOne({
-      where:       { orderId, status: { [Op.in]: ['pending', 'completed'] } },
+      where:       { orderId, status: { [Op.in]: REFUND_ACTIVE } },
       transaction,
     });
     if (existingRefund) {
       throw new AppError(
-        'A refund is already in progress. Wait for it to complete before issuing another.', 409
+        'A refund already exists for this order. Wait for it to complete before issuing another.', 409
       );
     }
 
     const orderTotal = parseFloat(order.totalAmount);
     const refundAmt  = amount ? Math.min(parseFloat(amount), orderTotal) : orderTotal;
     if (refundAmt <= 0) throw new AppError('Refund amount must be greater than zero', 422);
+
+    // Cumulative cap — defense in depth. Sum prior non-failed refunds and ensure
+    // the running total never exceeds the order total even if the guard above is
+    // ever bypassed by a future code path.
+    const priorRefunded = Number(await db.Refund.sum('amount', {
+      where: { orderId, status: { [Op.in]: REFUND_ACTIVE } },
+      transaction,
+    })) || 0;
+    if (priorRefunded + refundAmt > orderTotal + 0.001) {
+      throw new AppError(
+        `Refund would exceed the order total (already refunded ₦${priorRefunded} of ₦${orderTotal})`, 422
+      );
+    }
 
     const refund = await db.Refund.create({
       orderId,
@@ -675,11 +797,12 @@ export const claimGuestOrders = async (guestToken, userId) => {
 
 export const updateOrderStatus = async (orderId, {
   fulfillmentStatus,
-  paymentStatus  = null,
-  note           = null,
-  trackingNumber = null,
-  carrier        = null,
-  refund         = null,
+  paymentStatus    = null,
+  note             = null,
+  trackingNumber   = null,
+  carrier          = null,
+  expectedDelivery = null,
+  refund           = null,
   actorId,
 }) => {
   const transaction = await db.sequelize.transaction();
@@ -692,34 +815,63 @@ export const updateOrderStatus = async (orderId, {
     });
     if (!order) throw new NotFoundError('Order not found');
 
-    const allowed = VALID_TRANSITIONS[order.status] ?? [];
-    if (!allowed.includes(fulfillmentStatus)) {
-      throw new AppError(
-        `Cannot move from "${order.status}" to "${fulfillmentStatus}". ` +
-        `Allowed: ${allowed.length ? allowed.join(', ') : 'none'}`,
-        422
-      );
+    // Same-status saves are SHIPMENT UPDATES: the admin posts a progress note
+    // ("Package arrived at Ibadan hub") to the customer-visible timeline
+    // without advancing the order. Only actual transitions are validated.
+    const isSameStatus = fulfillmentStatus === order.status;
+
+    if (!isSameStatus) {
+      const allowed = VALID_TRANSITIONS[order.status] ?? [];
+      if (!allowed.includes(fulfillmentStatus)) {
+        throw new AppError(
+          `Cannot move from "${order.status}" to "${fulfillmentStatus}". ` +
+          `Allowed: ${allowed.length ? allowed.join(', ') : 'none'}`,
+          422
+        );
+      }
     }
 
     await order.update({
       status: fulfillmentStatus,
-      ...(paymentStatus  != null && { paymentStatus }),
-      ...(trackingNumber != null && { trackingNumber }),
-      ...(carrier        != null && { carrier }),
+      ...(paymentStatus    != null && { paymentStatus }),
+      ...(trackingNumber   != null && { trackingNumber }),
+      ...(carrier          != null && { carrier }),
+      ...(expectedDelivery != null && { expectedDelivery }),
     }, { transaction });
 
     await addTrackingEvent(
       orderId,
       fulfillmentStatus,
-      note || TRACKING_NOTES[fulfillmentStatus]?.() || `Status updated to ${fulfillmentStatus}`,
+      note
+        || (isSameStatus
+              ? 'Shipment update'
+              : TRACKING_NOTES[fulfillmentStatus]?.() || `Status updated to ${fulfillmentStatus}`),
       actorId,
       transaction,
     );
 
     if (refund?.amount > 0) {
+      // This admin path records a refund directly (status 'completed'), bypassing
+      // initiateRefundFlow. It still MUST enforce the cumulative cap, or an admin
+      // could refund more than the order total across multiple status updates.
+      const REFUND_ACTIVE = ['pending', 'processing', 'completed', 'manual_required'];
+      const orderTotal    = parseFloat(order.totalAmount);
+      const refundAmt     = parseFloat(refund.amount);
+
+      const priorRefunded = Number(await db.Refund.sum('amount', {
+        where: { orderId, status: { [Op.in]: REFUND_ACTIVE } },
+        transaction,
+      })) || 0;
+      if (priorRefunded + refundAmt > orderTotal + 0.001) {
+        throw new AppError(
+          `Refund would exceed the order total (already refunded ₦${priorRefunded} of ₦${orderTotal})`, 422
+        );
+      }
+
       await db.Refund.create({
         orderId,
-        amount:      refund.amount,
+        amount:      refundAmt,
+        currency:    order.currency ?? 'NGN',
         reason:      refund.reason || null,
         method:      refund.method,
         processedBy: actorId,
@@ -728,6 +880,22 @@ export const updateOrderStatus = async (orderId, {
     }
 
     await transaction.commit();
+
+    // Customer notification — fire-and-forget AFTER commit. Real transitions
+    // always email; same-status shipment updates only email when the admin
+    // wrote a note (that note IS the message — no point sending an empty one).
+    // Payment-confirmation emails are handled by handlePaymentSuccess, so a
+    // processing transition triggered there won't double-send: this path only
+    // runs for admin-driven status updates.
+    if (!isSameStatus || note) {
+      sendOrderStatusEmail(order, {
+        note,
+        trackingNumber,
+        carrier,
+        expectedDelivery,
+      });
+    }
+
     return getOrderById(orderId);
 
   } catch (err) {
@@ -792,6 +960,9 @@ export const cancelOrderByCustomer = async (
 
     await transaction.commit();
 
+    // Cancellation confirmation — fire-and-forget after commit
+    sendOrderStatusEmail(order, { note: reason ? `Reason: ${reason}` : null });
+
     return {
       order:            await getOrderById(realOrderId, userId, guestToken),
       needsRefund:      order.paymentStatus === 'paid',
@@ -854,6 +1025,9 @@ export const cancelOrderByAdmin = async (orderId, adminId, {
     );
 
     await transaction.commit();
+
+    // Cancellation notification — fire-and-forget after commit
+    sendOrderStatusEmail(order, { note: reason ? `Reason: ${reason}` : null });
 
     return {
       order:            await getOrderById(orderId),

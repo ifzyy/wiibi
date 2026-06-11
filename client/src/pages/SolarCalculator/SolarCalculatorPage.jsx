@@ -3,7 +3,7 @@ import heroImage from "../../assets/cta.png";
 import heroFlower from "../../assets/hero-flower.svg";
 import axios from "axios";
 import { X, ChevronDown, ChevronRight } from "lucide-react";
-import CalculatorModal from "./CalculatorModal.jsx";
+import { useCalculatorModal } from "../../context/CalculatorModalContext.jsx";
 
 // --- Main Page ---
 const SolarCalculatorPage = () => {
@@ -11,7 +11,9 @@ const SolarCalculatorPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false); // Modal state
+  // The modal is global (CalculatorModalProvider) — same instance every
+  // entry point on the site opens.
+  const { openCalculator } = useCalculatorModal();
 
   const handleAmountChange = useCallback((e) => {
     setAmount(e.target.value);
@@ -22,7 +24,7 @@ const SolarCalculatorPage = () => {
   // Handler for arrow button click
   const handleCalculateClick = () => {
     if (isActive) {
-      setIsModalOpen(true);
+      openCalculator();
     }
   };
 
@@ -31,7 +33,7 @@ const SolarCalculatorPage = () => {
     const fetchPage = async () => {
       try {
         setLoading(true);
-        const response = await axios.get("http://localhost:5000/api/public/pages/home");
+        const response = await axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/public/pages/home`);
         if (!mounted) return;
         setData(response.data);
       } catch (err) {
@@ -124,12 +126,6 @@ const SolarCalculatorPage = () => {
           </div>
         </div>
       </section>
-
-      {/* The Modal */}
-      <CalculatorModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-      />
     </>
   );
 };

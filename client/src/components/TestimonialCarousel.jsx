@@ -4,7 +4,7 @@ import Autoplay from "embla-carousel-autoplay";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const TestimonialCarousel = ({ testimonials }) => {
   const [emblaRef, emblaApi] = useEmblaCarousel({

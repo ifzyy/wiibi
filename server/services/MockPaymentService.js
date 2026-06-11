@@ -3,51 +3,56 @@
  *
  * Mirrors the real Paystack API contract exactly.
  *
- * CRITICAL CHANGE from previous version:
- *  initializePayment() now ACCEPTS a `reference` parameter instead of generating one.
- *  The reference is generated at order creation in OrderService and passed through here.
- *  This is how real Paystack works — you pass your own reference and Paystack tracks it.
+ * KEY DESIGN:
+ *  - Outcome (success/failed) is pre-determined at initializePayment() time.
+ *  - Both verifyPayment() and simulateWebhook() read from the same stored outcome.
+ *  - This prevents the race condition where verify and webhook could disagree.
+ *  - markFailed(reference) lets the mock-fail endpoint override the outcome
+ *    before the auto-webhook fires.
  *
- * TO GO LIVE: swap the import in paymentController.js:
- *   './MockPaymentService.js'  →  './PaystackService.js'
+ * Webhook simulation flow:
+ *  - Auto-webhook fires MOCK_WEBHOOK_DELAY_MS after initializePayment() —
+ *    tests the webhook-first production path (webhook arrives before browser redirect).
+ *  - handleVerify also fires a second webhook after success/failure —
+ *    tests idempotent duplicate delivery.
+ *  - handleMockFail fires a failure webhook immediately when user clicks
+ *    "Simulate Failed Payment" on the mock gateway, overriding any pending auto-webhook.
  *
- * PaystackService.js must export the same function signatures:
- *   initializePayment({ email, amount, orderId, orderNumber, currency, reference, callbackUrl })
- *   verifyPayment(reference)
- *   initiateRefund({ reference, amount, merchantNote })
- *   verifyWebhookSignature(rawBody, signature)
+ * TO GO LIVE:
+ *  Change the import in paymentProvider.js from MockPaymentService → PaystackService.
+ *  Nothing else changes.
  *
  * ENV VARS:
- *   MOCK_PAYMENT_FAIL_RATE=0.2    → 20% of payments will fail (for testing)
- *   MOCK_WEBHOOK_DELAY_MS=2000    → ms before simulated webhook fires (default 2s)
- *   MOCK_WEBHOOK_SECRET=xxx       → secret used to sign webhook payloads
+ *   MOCK_PAYMENT_FAIL_RATE=0.2    → 20 % of auto-webhooks will fail
+ *   MOCK_WEBHOOK_DELAY_MS=45000   → delay before auto-webhook fires (default 45 s)
+ *   MOCK_WEBHOOK_SECRET=xxx       → HMAC key for signing webhook payloads
  */
 
 import crypto from 'crypto';
 
 const FAIL_RATE        = parseFloat(process.env.MOCK_PAYMENT_FAIL_RATE ?? '0');
-const WEBHOOK_DELAY_MS = parseInt(process.env.MOCK_WEBHOOK_DELAY_MS    ?? '2000');
+// The auto-webhook delay must be long enough for a HUMAN to click "Pay" or
+// "Simulate Failed Payment" on the mock gateway first. At the old 2s default
+// the success webhook always won the race — the order was paid before the
+// user could simulate a failure, and mock-fail became a no-op. 45s still
+// exercises the webhook-first path when the gateway page is abandoned.
+const WEBHOOK_DELAY_MS = parseInt(process.env.MOCK_WEBHOOK_DELAY_MS    ?? '45000');
 
 export const WEBHOOK_SECRET = process.env.MOCK_WEBHOOK_SECRET ?? 'mock_webhook_secret_dev';
 
 /* ── In-memory transaction store ─────────────────────────────────────────── */
-// In production Paystack maintains this — we replicate it in memory for tests.
+
 const txStore = new Map();
 
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ── initializePayment ───────────────────────────────────────────────────── */
 
 /**
- * Initialize a payment.
+ * Stores the payment and pre-determines the outcome.
  * Real Paystack: POST https://api.paystack.co/transaction/initialize
- *
- * KEY DIFFERENCE from old version:
- *   We accept `reference` from the caller (OrderService generated it).
- *   Real Paystack accepts a `reference` field in the request body and uses it
- *   as the stable identifier — which is what lets webhooks find the right order.
  *
  * @param {{
  *   email:       string,
- *   amount:      number,   — in kobo (NGN × 100)
+ *   amount:      number,   — kobo (NGN × 100)
  *   orderId:     string,
  *   orderNumber: string,
  *   currency:    string,
@@ -61,13 +66,15 @@ export const initializePayment = async ({
   orderId,
   orderNumber,
   currency    = 'NGN',
-  reference,           // REQUIRED — passed from OrderService, not generated here
+  reference,
   callbackUrl,
 }) => {
   if (!reference) {
     throw new Error('[MockPaymentService] reference is required — generate it in OrderService');
   }
 
+  // Pre-determine outcome so verify and webhook always agree
+  const outcome     = Math.random() < FAIL_RATE ? 'failed' : 'success';
   const access_code = `ac_${Date.now().toString(36).toUpperCase()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
   txStore.set(reference, {
@@ -78,23 +85,21 @@ export const initializePayment = async ({
     amount,
     currency,
     status:      'pending',
+    _outcome:    outcome,   // pre-determined; read by verifyPayment + buildWebhookPayload
     initiatedAt: new Date().toISOString(),
   });
 
-  // authorization_url points to the mock checkout page
   const baseUrl           = callbackUrl?.replace(/\/verify.*$/, '');
   const authorization_url = `${baseUrl}/mock-gateway?orderId=${orderId}&reference=${reference}`;
 
   return { reference, authorization_url, access_code };
 };
 
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ── verifyPayment ───────────────────────────────────────────────────────── */
 
 /**
- * Verify a payment.
  * Real Paystack: GET https://api.paystack.co/transaction/verify/:reference
- *
- * Returns the same shape as Paystack's real verify endpoint.
+ * Reads the pre-determined outcome — no independent randomisation.
  */
 export const verifyPayment = async (reference) => {
   const tx = txStore.get(reference);
@@ -103,9 +108,7 @@ export const verifyPayment = async (reference) => {
     return { status: false, message: 'Transaction reference not found', data: null };
   }
 
-  // Apply configured fail rate — simulates real-world card declines
-  const failed   = Math.random() < FAIL_RATE;
-  const txStatus = failed ? 'failed' : 'success';
+  const txStatus = tx._outcome === 'failed' ? 'failed' : 'success';
   txStore.set(reference, { ...tx, status: txStatus, verifiedAt: new Date().toISOString() });
 
   return {
@@ -117,47 +120,41 @@ export const verifyPayment = async (reference) => {
       amount:     tx.amount,
       currency:   tx.currency,
       status:     txStatus,
-      paid_at:    failed ? null : new Date().toISOString(),
+      paid_at:    txStatus === 'success' ? new Date().toISOString() : null,
       created_at: tx.initiatedAt,
       channel:    'card',
       fees:       Math.round(tx.amount * 0.015),
-      gateway_response: failed ? 'Declined' : 'Approved',
+      gateway_response: txStatus === 'success' ? 'Approved' : 'Declined',
       customer:   { email: tx.email },
       metadata:   { orderId: tx.orderId, orderNumber: tx.orderNumber },
       authorization: {
         authorization_code: `AUTH_mock_${crypto.randomBytes(6).toString('hex')}`,
-        card_type:  'visa',
-        last4:      '4081',
-        exp_month:  '12',
-        exp_year:   '2027',
-        bank:       'TEST BANK',
-        channel:    'card',
-        reusable:   true,
+        card_type: 'visa',
+        last4:     '4081',
+        exp_month: '12',
+        exp_year:  '2027',
+        bank:      'TEST BANK',
+        channel:   'card',
+        reusable:  true,
       },
     },
   };
 };
 
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ── initiateRefund ──────────────────────────────────────────────────────── */
 
 /**
- * Initiate a refund.
  * Real Paystack: POST https://api.paystack.co/refund
- *
- * @param {{
- *   reference:    string,   — original payment reference
- *   amount?:      number,   — in kobo; omit for full refund
- *   merchantNote: string,
- * }} opts
+ * Returns a structured failure instead of throwing when the tx is unknown.
+ * Callers must check result.status before trusting result.data.
  */
 export const initiateRefund = async ({ reference, amount, merchantNote }) => {
   const tx = txStore.get(reference);
 
   if (!tx) {
-    // Don't throw — return a structured failure the caller can handle gracefully
     return {
       status:  false,
-      message: 'Transaction not found',
+      message: 'Transaction not found in mock store — likely a restarted server',
       data:    null,
     };
   }
@@ -179,14 +176,28 @@ export const initiateRefund = async ({ reference, amount, merchantNote }) => {
   };
 };
 
-/* ─────────────────────────────────────────────────────────────────────────── */
+/* ── markFailed ──────────────────────────────────────────────────────────── */
 
 /**
- * Build and sign a webhook payload identical to what Paystack sends.
- * Used internally by simulateWebhook().
+ * Overrides the pre-determined outcome to 'failed'.
+ * Called by handleMockFail when the user explicitly clicks "Simulate Failed Payment"
+ * on the mock gateway — ensures the subsequent webhook fires as charge.failed.
  */
-export const buildWebhookPayload = (event, reference) => {
-  const tx = txStore.get(reference) ?? { reference, amount: 0, currency: 'NGN' };
+export const markFailed = (reference) => {
+  const tx = txStore.get(reference);
+  if (tx) txStore.set(reference, { ...tx, _outcome: 'failed' });
+};
+
+/* ── buildWebhookPayload ─────────────────────────────────────────────────── */
+
+/**
+ * Builds and signs a Paystack-shaped webhook payload.
+ * Reads outcome from txStore._outcome so it always matches verifyPayment().
+ */
+export const buildWebhookPayload = (reference) => {
+  const tx = txStore.get(reference) ?? { reference, amount: 0, currency: 'NGN', _outcome: 'success' };
+
+  const event = tx._outcome === 'failed' ? 'charge.failed' : 'charge.success';
 
   const body = JSON.stringify({
     event,
@@ -194,13 +205,11 @@ export const buildWebhookPayload = (event, reference) => {
       reference,
       amount:           tx.amount,
       currency:         tx.currency,
-      status:           event === 'charge.success' ? 'success'
-                      : event === 'charge.failed'  ? 'failed'
-                      : 'processed',
-      gateway_response: event === 'charge.success' ? 'Approved' : 'Declined',
+      status:           tx._outcome === 'failed' ? 'failed' : 'success',
+      gateway_response: tx._outcome === 'failed' ? 'Declined' : 'Approved',
       customer:         { email: tx.email },
       metadata:         { orderId: tx.orderId, orderNumber: tx.orderNumber },
-      paid_at:          event === 'charge.success' ? new Date().toISOString() : null,
+      paid_at:          tx._outcome === 'success' ? new Date().toISOString() : null,
     },
   });
 
@@ -208,39 +217,53 @@ export const buildWebhookPayload = (event, reference) => {
   return { body, signature };
 };
 
+/* ── simulateWebhook ─────────────────────────────────────────────────────── */
+
 /**
- * Simulate Paystack calling your webhook (dev only).
- * Fires automatically after initializePayment() with a configurable delay.
+ * Fires a webhook to the given URL after MOCK_WEBHOOK_DELAY_MS.
+ * Outcome is read from txStore at fire time (not at call time) so that
+ * markFailed() called between now and then is honoured.
+ *
+ * Called by handleInitialize (auto-webhook, tests webhook-first production path)
+ * and by handleVerify / handleMockFail (immediate duplicate, tests idempotency).
+ *
+ * @param {string} reference
+ * @param {string} webhookUrl
+ * @param {number} [delay]    — override WEBHOOK_DELAY_MS for immediate delivery
  */
-export const simulateWebhook = (outcome, reference, webhookUrl) => {
+export const simulateWebhook = (reference, webhookUrl, delay = WEBHOOK_DELAY_MS) => {
   setTimeout(async () => {
-    const event = outcome === 'success' ? 'charge.success' : 'charge.failed';
-    const { body, signature } = buildWebhookPayload(event, reference);
+    const { body, signature } = buildWebhookPayload(reference);
     try {
       await fetch(webhookUrl, {
         method:  'POST',
         headers: {
-          'Content-Type':          'application/json',
-          'x-paystack-signature':  signature,
+          'Content-Type':         'application/json',
+          'x-paystack-signature': signature,
         },
         body,
       });
     } catch (err) {
       console.warn('[MockPayment] Webhook delivery failed:', err.message);
     }
-  }, WEBHOOK_DELAY_MS);
+  }, delay);
 };
 
+/* ── verifyWebhookSignature ──────────────────────────────────────────────── */
+
 /**
- * Verify the HMAC-SHA512 signature on an incoming webhook.
- *
- * @param {string} rawBody    — raw request body string (NOT JSON.parsed)
- * @param {string} signature  — req.headers['x-paystack-signature']
+ * Verifies HMAC-SHA512 signature on an incoming webhook.
+ * @param {string} rawBody   — raw request body string (not JSON.parsed)
+ * @param {string} signature — req.headers['x-paystack-signature']
  */
 export const verifyWebhookSignature = (rawBody, signature) => {
+  if (!signature) return false;
   const expected = crypto
     .createHmac('sha512', WEBHOOK_SECRET)
     .update(rawBody)
     .digest('hex');
-  return expected === signature;
+  // Constant-time compare — mirrors PaystackService so behaviour matches prod.
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(String(signature), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 };

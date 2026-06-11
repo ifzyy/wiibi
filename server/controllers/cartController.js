@@ -46,7 +46,6 @@ export const handleGetCart = asyncHandler(async (req, res) => {
 
 export const handleAddToCart = asyncHandler(async (req, res) => {
   const { error, value } = addItemSchema.validate(req.body);
-    console.log(error)
   if (error) throw new ValidationError(error.details[0].message);
 
   const cart = await resolveCart(req);
@@ -56,7 +55,6 @@ export const handleAddToCart = asyncHandler(async (req, res) => {
 
 export const handleUpdateItem = asyncHandler(async (req, res) => {
   const { error, value } = updateItemSchema.validate(req.body);
-  console.log(error)
   if (error) throw new ValidationError(error.details[0].message);
 
   const cart = await resolveCart(req);

@@ -79,6 +79,91 @@ const PricePreview = ({ value, originalPrice }) => {
   );
 };
 // ─────────────────────────────────────────────────────────────────────────────
+// SolarMatchingSection — tags a product for the solar calculator.
+// Maps to products.solar_component_type + products.solar_specs.
+// The spec inputs change with the chosen component type; specs reset when the
+// type changes because each type stores a different shape.
+// ─────────────────────────────────────────────────────────────────────────────
+const SOLAR_TYPE_OPTIONS = [
+  { label: "None",              value: ""                  },
+  { label: "Inverter",          value: "inverter"          },
+  { label: "Battery",           value: "battery"           },
+  { label: "Solar Panel",       value: "solar-panel"       },
+  { label: "Charge Controller", value: "charge-controller" },
+];
+const SOLAR_CHEMISTRIES = ["lithium", "tubular", "dry-cell"];
+
+const SolarMatchingSection = ({ form, set }) => {
+  const type  = form.solar_component_type || "";
+  const specs = form.solar_specs || {};
+
+  const setSpec = (key, val) => set("solar_specs", { ...specs, [key]: val });
+  const setType = (label) => {
+    const next = SOLAR_TYPE_OPTIONS.find(o => o.label === label)?.value ?? "";
+    set("solar_component_type", next);
+    set("solar_specs", next === "battery" ? { chemistry: "lithium" } : {});
+  };
+
+  const currentLabel = SOLAR_TYPE_OPTIONS.find(o => o.value === type)?.label ?? "None";
+
+  const numberField = (label, key, placeholder) => (
+    <div>
+      <FieldLabel required>{label}</FieldLabel>
+      <input
+        type="number" min="0" step="any"
+        value={specs[key] ?? ""}
+        onChange={(e) => setSpec(key, e.target.value)}
+        placeholder={placeholder}
+        style={inputBase}
+      />
+    </div>
+  );
+
+  return (
+    <div>
+      <FieldLabel hint="tagged products appear in solar calculator results">Solar Matching</FieldLabel>
+      <SelectField
+        value={currentLabel}
+        onChange={setType}
+        options={SOLAR_TYPE_OPTIONS.map(o => o.label)}
+      />
+
+      {type === "inverter" && (
+        <div style={{ marginTop: 10 }}>
+          {numberField("Capacity (kVA)", "kva", "e.g. 5")}
+        </div>
+      )}
+
+      {type === "battery" && (
+        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {numberField("Capacity (Ah)", "ah", "e.g. 200")}
+          <div>
+            <FieldLabel required>Chemistry</FieldLabel>
+            <SelectField
+              value={specs.chemistry ?? "lithium"}
+              onChange={(v) => setSpec("chemistry", v)}
+              options={SOLAR_CHEMISTRIES}
+            />
+          </div>
+        </div>
+      )}
+
+      {type === "solar-panel" && (
+        <div style={{ marginTop: 10 }}>
+          {numberField("Output (Watts)", "watts", "e.g. 400")}
+        </div>
+      )}
+
+      {type === "charge-controller" && (
+        <div style={{ marginTop: 10 }}>
+          {numberField("Rating (Amps)", "ampere", "e.g. 60")}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1.  GENERAL TAB
 // ─────────────────────────────────────────────────────────────────────────────
 export const GeneralTab = ({ form, set, totalSteps }) => {
@@ -184,6 +269,27 @@ export const GeneralTab = ({ form, set, totalSteps }) => {
         </div>
       </div>
 
+      {/* Delivery fee override */}
+      <div>
+        <FieldLabel hint="leave empty to use the default fee from Settings">
+          Delivery Fee (₦)
+        </FieldLabel>
+        <div style={{ position: "relative" }}>
+          <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 800, color: C.muted, pointerEvents: "none" }}>₦</span>
+          <input
+            type="number" min="0" step="any"
+            value={form.delivery_fee}
+            onChange={(e) => set("delivery_fee", e.target.value)}
+            placeholder="Default"
+            style={{ ...inputBase, paddingLeft: 26 }}
+          />
+        </div>
+        <p style={{ margin: "5px 0 0", fontSize: 10, color: C.muted, lineHeight: 1.5 }}>
+          For bulky items (inverters, batteries). Orders are charged the highest
+          delivery fee among the items in the cart.
+        </p>
+      </div>
+
  
 
       <Divider gap={4} />
@@ -249,6 +355,11 @@ export const GeneralTab = ({ form, set, totalSteps }) => {
           desc="Highlighted on homepage and category pages"
         />
       </div>
+
+      <Divider gap={4} />
+
+      {/* Solar calculator matching */}
+      <SolarMatchingSection form={form} set={set} />
 
       <Divider gap={4} />
 

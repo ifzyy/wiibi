@@ -94,7 +94,6 @@ const styles = {
   },
   uploadMoreBtn: {
     background: "none",
-    border: "none",
     color: "#555",
     fontSize: 12,
     cursor: "pointer",

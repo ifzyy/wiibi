@@ -75,6 +75,7 @@ export const BLANK_FORM = {
   price:             "",
   sale_price:        "",        // optional
   stock:             0,
+  delivery_fee:      "",        // optional — "" = use global default fee
 
   // ── Flags ────────────────────────────────────────────────────────────
   is_visible:        true,
@@ -90,6 +91,12 @@ export const BLANK_FORM = {
   warranty_enabled:  true,
   warranty:          1,         // integer years → serialised as warranty_duration
   powered_devices:   [],
+
+  // ── Solar calculator matching ────────────────────────────────────────
+  // "" = not a calculator component. When set, solar_specs shape depends
+  // on the type: {kva} | {ah, chemistry} | {watts} | {ampere}
+  solar_component_type: "",
+  solar_specs:          {},
 
   // ── Specs → stored as specifications JSON [{label, value}] ──────────
   specs:             [{ title: "", info: "" }],
