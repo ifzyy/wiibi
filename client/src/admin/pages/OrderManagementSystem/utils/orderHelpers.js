@@ -5,15 +5,19 @@ export const getOrderNum = (order) =>
   order?.orderNumber ?? order?.order_number ?? order?.id ?? order?._id ?? "—";
 
 /** Resolve customer display name from various DB shapes */
-export const getCustomerName = (order) =>  order?.shippingAddress.fullName
+export const getCustomerName = (order) => {
+  const userName = [order?.user?.firstName, order?.user?.lastName]
+    .filter(Boolean).join(" ");
+  return order?.shippingAddress?.fullName || userName || order?.guestEmail || "Guest";
+};
 
 /** Resolve customer email */
 export const getCustomerEmail = (order) =>
-  order?.customer?.email ?? order?.user?.email ?? "—";
+  order?.customer?.email ?? order?.user?.email ?? order?.guestEmail ?? "—";
 
 /** Resolve customer phone */
 export const getCustomerPhone = (order) =>
-  order?.shippingAddress.phone;
+  order?.shippingAddress?.phone ?? order?.user?.phoneNumber ?? "—";
 
 /** Total item quantity across all line items */
 export const getTotalQty = (order) =>

@@ -22,6 +22,7 @@ import { Op } from 'sequelize';
 import db from '../models/index.js';
 import { NotFoundError, AppError } from '../utils/AppError.js';
 import { initiateRefund } from './paymentProvider.js';
+import { sendOrderStatusEmail } from './EmailService.js';
 
 const PAYSTACK_REFUND_WINDOW_MS = 20 * 24 * 60 * 60 * 1000;
 const toKobo = (ngn) => Math.round(parseFloat(ngn) * 100);
@@ -62,6 +63,9 @@ export const requestReturn = async (orderId, adminId, { reason, notes }) => {
     note:      `Return requested by admin · ${reason}` + (notes ? ` · ${notes}` : ''),
     updatedBy: adminId,
   });
+
+  // Customer notification — fire-and-forget, never throws
+  sendOrderStatusEmail(order, { note: reason });
 
   return order.reload({ include: [{ model: db.OrderItem, as: 'items' }] });
 };
@@ -172,6 +176,10 @@ export const confirmReturn = async (orderId, adminId, { refundMethod = 'Paystack
     await t.rollback();
     throw err;
   }
+
+  // Customer notification ("return complete") — fire-and-forget after commit.
+  // Sent regardless of refund outcome; refund specifics are admin-side.
+  db.Order.findByPk(orderId).then(o => o && sendOrderStatusEmail(o, { note: notes })).catch(() => {});
 
   // Unpaid order — nothing to refund.
   if (!isPaid || !refundId) {
