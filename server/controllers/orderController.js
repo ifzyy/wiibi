@@ -36,6 +36,8 @@ const checkoutSchema = Joi.object({
   currency:       Joi.string().length(3).uppercase().default('NGN'),
   guestEmail:     Joi.string().email().allow(null),
   guestToken:     Joi.string().optional().allow(null, ''),
+  promoCode:      Joi.string().max(40).allow(null, ''),
+  paymentMethod:  Joi.string().valid('online', 'on_delivery').default('online'),
 });
 
 const updateStatusSchema = Joi.object({
@@ -189,6 +191,8 @@ export const handleCheckout = asyncHandler(async (req, res) => {
     currency:        value.currency,
     guestEmail,
     guestToken,
+    promoCode:       value.promoCode || null,
+    paymentMethod:   value.paymentMethod,
   });
 
   return sendCreated(res, order, 'Order placed successfully');

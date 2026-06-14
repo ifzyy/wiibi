@@ -12,9 +12,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Truck, Package, MapPin, Clock,
-  CheckCircle, XCircle, AlertTriangle,
+  CheckCircle, XCircle, AlertTriangle, RotateCcw,
 } from 'lucide-react';
 import {api} from '../../utils/api';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 const fmt   = (n)   => '₦' + (n ?? 0).toLocaleString('en-NG');
@@ -265,6 +266,137 @@ const CancelModal = ({ order, onClose, onSuccess }) => {
   );
 };
 
+/* ─── Return request modal ──────────────────────────────────────────────────
+ * Delivered orders can request a return. This creates a `refund_request`
+ * support ticket (attached to the order) — the admin reviews it in the Support
+ * desk and processes the actual return/refund. On success we drop the customer
+ * straight into the ticket thread so they can add photos/details and track it.
+ */
+const RETURN_REASONS = [
+  'Defective / damaged item',
+  'Wrong item delivered',
+  'Item not as described',
+  'Missing items or parts',
+  'Changed my mind',
+  'Other',
+];
+
+const ReturnModal = ({ order, onClose }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [reason,  setReason]  = useState('');
+  const [details, setDetails] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState(null);
+
+  const email = user?.email || order?.guestEmail || order?.shippingAddress?.email || null;
+
+  const submit = async () => {
+    if (!reason) { setErr('Please select a reason'); return; }
+    if (!email)  { setErr('We could not find an email on your account. Please use the Contact Support page instead.'); return; }
+    setLoading(true); setErr(null);
+    try {
+      const body =
+        `Return request for order ${order.orderNumber}\n` +
+        `Reason: ${reason}` +
+        (details.trim() ? `\n\nDetails: ${details.trim()}` : '');
+
+      const res = await api.post('/support/tickets', {
+        requesterEmail: email,
+        requesterName:  order?.shippingAddress?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || null,
+        requesterPhone: order?.shippingAddress?.phone || null,
+        orderId:        order.id,
+        type:           'refund_request',
+        subject:        `Return request — order ${order.orderNumber}`,
+        body,
+      });
+      const ticketNumber = res.data?.data?.ticketNumber ?? res.data?.ticketNumber;
+      if (ticketNumber) navigate(`/account/support/${ticketNumber}`);
+      else onClose();
+    } catch (e) {
+      setErr(e?.response?.data?.message ?? 'Could not submit your return request. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      style={{ background: 'rgba(26,17,2,0.5)', animation: 'fadeIn 0.15s ease' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl w-full max-w-md overflow-hidden"
+        style={{ maxHeight: '90vh', overflowY: 'auto', animation: 'slideUp 0.25s ease' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between p-6 pb-4 border-b border-[#F1F1F1]">
+          <div>
+            <h2 className="text-base font-black text-[#1A1102]">Request a Return</h2>
+            <p className="text-xs text-[#B8A98A] mt-0.5 font-mono">{order?.orderNumber}</p>
+          </div>
+          <button onClick={onClose} className="text-[#B8A98A] hover:text-[#1A1102] text-xl leading-none mt-0.5">×</button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          <p className="text-xs text-[#6B6040] leading-relaxed bg-[#F9F9F9] rounded-xl p-3.5">
+            Tell us what's wrong and we'll open a conversation with our support team.
+            They'll confirm the return and arrange your refund from there.
+          </p>
+
+          <div>
+            <p className="text-[10px] font-bold text-[#B8A98A] uppercase tracking-widest mb-2.5">
+              Reason for return <span className="text-red-400">*</span>
+            </p>
+            <div className="space-y-2">
+              {RETURN_REASONS.map(r => (
+                <button key={r} onClick={() => setReason(r)} className="w-full text-left px-4 py-3 rounded-xl text-sm transition-all" style={{
+                  border:     reason === r ? '2px solid #FFAA14' : '1.5px solid #F1F1F1',
+                  background: reason === r ? '#FFF8E7' : '#F9F9F9',
+                  color:      reason === r ? '#1A1102' : '#6B6040',
+                  fontWeight: reason === r ? 700 : 500,
+                }}>{r}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold text-[#B8A98A] uppercase tracking-widest mb-2">
+              Details <span className="font-normal normal-case">(optional)</span>
+            </p>
+            <textarea
+              value={details}
+              onChange={e => setDetails(e.target.value)}
+              placeholder="Describe the issue — which item, what's wrong, etc."
+              rows={3}
+              className="w-full rounded-xl border border-[#F1F1F1] bg-[#F9F9F9] px-4 py-3 text-sm text-[#1A1102] placeholder:text-[#B8A98A] resize-none focus:outline-none focus:border-[#FFAA14]"
+            />
+          </div>
+
+          {err && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</p>}
+        </div>
+
+        <div className="flex gap-3 px-6 pb-6">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-[#F1F1F1] bg-[#F9F9F9] text-[#6B6040] font-bold text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={loading || !reason}
+            className="flex-1 py-3 rounded-xl bg-[#1A1102] text-white font-black text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {loading
+              ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting…</>
+              : <><RotateCcw size={14} /> Request Return</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ─── Main ────────────────────────────────────────────────────────────────── */
 const OrderDetail = () => {
   const { orderId }     = useParams();
@@ -275,6 +407,7 @@ const OrderDetail = () => {
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
   const [showCancel, setShowCancel] = useState(false);
+  const [showReturn, setShowReturn] = useState(false);
   const [cancelMsg,  setCancelMsg]  = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -287,6 +420,9 @@ const OrderDetail = () => {
   const cameFromCheckout = params.get('payment') === 'success';
   const paymentOk =
     cameFromCheckout && !bannerDismissed && order?.paymentStatus === 'paid';
+  // Just placed a Pay-on-Delivery order
+  const codPlaced =
+    params.get('placed') === 'cod' && !bannerDismissed && order?.paymentMethod === 'on_delivery';
 
   const load = useCallback(() => {
     if (!orderId) return;
@@ -316,6 +452,7 @@ const OrderDetail = () => {
   const ordNum   = order?.orderNumber ?? orderId;
   const timeline = order ? buildTimeline(order) : [];
   const canCancel = ['pending', 'processing'].includes(order?.status);
+  const canReturn = order?.status === 'delivered';
   const isCancelled = order?.status === 'cancelled';
 
   /* ── loading ─────────────────────────────────────────────────────────────── */
@@ -366,6 +503,19 @@ const OrderDetail = () => {
             <p className="text-sm font-semibold text-green-800">Payment confirmed — your order is being prepared.</p>
           </div>
           <button onClick={() => setBannerDismissed(true)} className="text-green-400 hover:text-green-600 text-lg leading-none shrink-0">×</button>
+        </div>
+      )}
+
+      {/* Pay-on-delivery confirmation banner */}
+      {codPlaced && !paymentOk && (
+        <div className="flex items-center justify-between gap-3 bg-[#FFF8E7] border border-[#FFAA14] rounded-xl px-4 py-3 mb-6">
+          <div className="flex items-center gap-2">
+            <CheckCircle size={15} className="text-[#FFAA14] shrink-0"/>
+            <p className="text-sm font-semibold text-[#7A5A12]">
+              Order confirmed! Pay <strong>{fmt(order?.totalAmount)}</strong> to our delivery agent on arrival.
+            </p>
+          </div>
+          <button onClick={() => setBannerDismissed(true)} className="text-[#C9A227] hover:text-[#7A5A12] text-lg leading-none shrink-0">×</button>
         </div>
       )}
 
@@ -531,6 +681,16 @@ const OrderDetail = () => {
               Cancel this order
             </button>
           )}
+
+          {/* Return CTA — delivered orders */}
+          {canReturn && (
+            <button
+              onClick={() => setShowReturn(true)}
+              className="mt-8 w-full py-3 rounded-xl border border-[#F1F1F1] text-sm font-semibold text-[#6B6040] hover:border-[#FFAA14] hover:text-[#1A1102] hover:bg-[#FFF8E7] transition-all flex items-center justify-center gap-2"
+            >
+              <RotateCcw size={15} /> Request a return
+            </button>
+          )}
         </div>
 
         {/* ── Right: Items + Summary ──────────────────────────────────────── */}
@@ -619,6 +779,13 @@ const OrderDetail = () => {
           order={order}
           onClose={() => setShowCancel(false)}
           onSuccess={handleCancelSuccess}
+        />
+      )}
+
+      {showReturn && (
+        <ReturnModal
+          order={order}
+          onClose={() => setShowReturn(false)}
         />
       )}
     </div>

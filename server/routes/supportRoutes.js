@@ -18,6 +18,8 @@ import {
   handleAddMessage,
   handleReplaceTags,
   handlePublicCreateTicket,
+  handleListMyTickets,
+  handleGetMyTicket,
   handleCustomerReply,
 } from '../controllers/supportController.js';
 
@@ -46,6 +48,20 @@ publicSupportRouter.post(
   '/tickets',
   optionalAuthenticate,   // sets req.user if token present, never blocks
   handlePublicCreateTicket
+);
+
+// Logged-in customer: list own tickets
+publicSupportRouter.get(
+  '/tickets',
+  authenticate,
+  handleListMyTickets
+);
+
+// Logged-in customer: view one own ticket thread (no internal notes)
+publicSupportRouter.get(
+  '/tickets/:ticketNumber',
+  authenticate,
+  handleGetMyTicket
 );
 
 // Customer replies to their own ticket

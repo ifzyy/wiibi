@@ -30,6 +30,7 @@ import AnalyticsDashboard   from "./pages/AnalyticsDashboard/index.jsx";
 import CustomersCRM         from "./pages/CustomersCRM/index.jsx";
 import LeadsCRM             from "./pages/LeadsCRM/index.jsx";
 import PaymentsAdmin        from "./pages/PaymentsAdmin/index.jsx";
+import Promotions           from "./pages/Promotions/index.jsx";
 import SupportDesk          from "./pages/SupportDesk/index.jsx";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -38,7 +39,8 @@ const PAGE_LABELS = {
   leads:     "Leads",
   payments:  "Payments",   support:   "Support",
   products:  "Inventory",  orders:    "Orders",
-  refunds:   "Refunds",    blog:      "Blog",
+  refunds:   "Refunds",    promotions: "Promotions",
+  blog:      "Blog",
   projects:  "Projects",   faqs:      "FAQs",
   forms:     "Forms",      settings:  "Settings",
   pages:     "Page Editor",
@@ -256,6 +258,7 @@ export default function AdminDashboard() {
             {activeNav === "products" && <ProductCatalogPage />}
             {activeNav === "orders"   && <OMS />}
             {activeNav === "refunds"  && <RefundReturnsPage />}
+            {activeNav === "promotions" && <Promotions />}
             {activeNav === "blog"     && <BlogManager />}
             {activeNav === "forms"    && <RequestForm />}
             {activeNav === "settings" && <SettingsPage />}

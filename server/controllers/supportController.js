@@ -10,6 +10,8 @@ import {
   createTicket,
   getTicketList,
   getTicketById,
+  getMyTickets,
+  getMyTicketByNumber,
   updateTicketStatus,
   assignTicket,
   addMessage,
@@ -225,6 +227,39 @@ export const handlePublicCreateTicket = asyncHandler(async (req, res) => {
     status:       ticket.status,
     createdAt:    ticket.createdAt,
   }, 'Your support ticket has been submitted. We will respond within 24 hours.');
+});
+
+/**
+ * GET /support/tickets  (authenticated customer)
+ * List the logged-in customer's own tickets.
+ */
+export const handleListMyTickets = asyncHandler(async (req, res) => {
+  const { error, value } = Joi.object({
+    page:  Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(50).default(20),
+  }).validate(req.query, { convert: true });
+  if (error) throw new ValidationError(error.details[0].message);
+
+  const result = await getMyTickets({
+    userId: req.user.id,
+    email:  req.user.email ?? null,
+    ...value,
+  });
+
+  return sendPaginated(res, result.tickets, result.pagination);
+});
+
+/**
+ * GET /support/tickets/:ticketNumber  (authenticated customer)
+ * Full thread for one of the customer's own tickets — no internal notes.
+ */
+export const handleGetMyTicket = asyncHandler(async (req, res) => {
+  const ticket = await getMyTicketByNumber({
+    ticketNumber: req.params.ticketNumber,
+    userId:       req.user.id,
+    email:        req.user.email ?? null,
+  });
+  return sendSuccess(res, ticket);
 });
 
 /**

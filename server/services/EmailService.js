@@ -471,3 +471,123 @@ export const sendPaymentConfirmationEmail = async (order, { amountNgn, reference
     return false;
   }
 };
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/*  Support ticket reply notification                                          */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/** Minimal branded layout for non-order emails (support). */
+const supportLayout = ({ preheader, heading, greeting, bodyHtml }) => `<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+  <body style="margin:0;padding:0;background:${BRAND.bg};font-family:'Segoe UI',Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(preheader)}</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.bg};padding:36px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+          <tr><td style="background:${BRAND.ink};border-radius:16px 16px 0 0;padding:22px 36px;">
+            <span style="font-size:19px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;">Wiibi</span><span style="font-size:19px;font-weight:800;color:${BRAND.amber};letter-spacing:-0.02em;"> Energy</span>
+            <span style="float:right;font-size:11px;color:#B8B2A6;letter-spacing:0.06em;text-transform:uppercase;">Support</span>
+          </td></tr>
+          <tr><td style="background:#ffffff;border:1px solid ${BRAND.border};border-top:none;padding:36px;">
+            <h1 style="margin:0 0 10px;font-size:21px;line-height:1.3;color:${BRAND.ink};letter-spacing:-0.02em;">${heading}</h1>
+            <p style="margin:0 0 6px;font-size:14px;color:${BRAND.text};">${escapeHtml(greeting)}</p>
+            ${bodyHtml}
+          </td></tr>
+          <tr><td style="background:${BRAND.panel};border:1px solid ${BRAND.border};border-top:none;border-radius:0 0 16px 16px;padding:22px 36px;">
+            <p style="margin:0;font-size:11px;color:${BRAND.muted};line-height:1.6;">
+              This is a notification about your support conversation with ${APP_NAME}.
+              <br/>© ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+            </p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+
+const quoteBlock = (body) => `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+    <tr><td style="background:${BRAND.panel};border:1px solid ${BRAND.border};border-left:3px solid ${BRAND.amber};border-radius:10px;padding:14px 18px;">
+      <p style="margin:0;font-size:14px;color:${BRAND.text};line-height:1.7;white-space:pre-wrap;">${escapeHtml(body)}</p>
+    </td></tr>
+  </table>`;
+
+const supportCta = (href, label) => href ? `
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0 4px;">
+    <tr><td style="border-radius:10px;background:${BRAND.amber};">
+      <a href="${href}" target="_blank" style="display:inline-block;padding:13px 32px;font-size:14px;font-weight:800;color:${BRAND.ink};text-decoration:none;border-radius:10px;font-family:'Segoe UI',Arial,sans-serif;">${label}</a>
+    </td></tr>
+  </table>` : '';
+
+/**
+ * Notify the other party when a non-internal message is added to a ticket.
+ * Called by SupportService.addMessage AFTER commit (fire-and-forget).
+ *
+ *  - admin reply    → emails the customer (with a link to their ticket thread)
+ *  - customer reply → emails the assigned admin, or SUPPORT_EMAIL as fallback
+ */
+export const sendSupportReplyEmail = async ({ ticketId, senderType, body }) => {
+  try {
+    const ticket = await db.SupportTicket.findByPk(ticketId, {
+      attributes: ['ticketNumber', 'subject', 'requesterName', 'requesterEmail'],
+      include: [{ model: db.User, as: 'assignee', attributes: ['email', 'firstName'], required: false }],
+    });
+    if (!ticket) return false;
+
+    if (senderType === 'admin') {
+      // → customer
+      const to = ticket.requesterEmail;
+      if (!to) return false;
+      const firstName = ticket.requesterName?.split(' ')[0];
+      const link = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const href = link ? `${link}/support/tickets/${ticket.ticketNumber}` : null;
+
+      return await send({
+        to,
+        subject: `Re: ${ticket.subject} [${ticket.ticketNumber}]`,
+        html: supportLayout({
+          preheader: 'Our support team has replied to your request.',
+          heading:   'You have a new reply from our team',
+          greeting:  firstName ? `Hi ${firstName},` : 'Hello,',
+          bodyHtml: `
+            <p style="margin:0;font-size:14px;color:${BRAND.text};line-height:1.7;">
+              Our support team has responded to your ticket
+              <strong>${escapeHtml(ticket.ticketNumber)}</strong>:
+            </p>
+            ${quoteBlock(body)}
+            ${supportCta(href, 'View & reply')}
+            <p style="margin:18px 0 0;font-size:13px;color:${BRAND.muted};line-height:1.7;">
+              You can also reply directly to this email and it will reach our team.
+            </p>`,
+        }),
+      });
+    }
+
+    // senderType === 'customer'  → assigned admin / support inbox
+    const to = ticket.assignee?.email || process.env.SUPPORT_EMAIL || null;
+    if (!to) return false;
+
+    return await send({
+      to,
+      subject: `Customer reply: ${ticket.subject} [${ticket.ticketNumber}]`,
+      html: supportLayout({
+        preheader: 'A customer has replied to a support ticket.',
+        heading:   'New customer reply',
+        greeting:  ticket.assignee?.firstName ? `Hi ${ticket.assignee.firstName},` : 'Hello,',
+        bodyHtml: `
+          <p style="margin:0;font-size:14px;color:${BRAND.text};line-height:1.7;">
+            <strong>${escapeHtml(ticket.requesterName || ticket.requesterEmail)}</strong>
+            replied to ticket <strong>${escapeHtml(ticket.ticketNumber)}</strong>:
+          </p>
+          ${quoteBlock(body)}
+          <p style="margin:18px 0 0;font-size:13px;color:${BRAND.muted};line-height:1.7;">
+            Open the Support Desk in the admin dashboard to respond.
+          </p>`,
+      }),
+    });
+  } catch (err) {
+    logger.error(`[EmailService] sendSupportReplyEmail failed for ticket ${ticketId}: ${err.message}`);
+    return false;
+  }
+};

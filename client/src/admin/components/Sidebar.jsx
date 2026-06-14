@@ -32,6 +32,7 @@ const NAV_GROUPS = [
       { id: "orders",    label: "Orders",    icon: "shoppingCart", badge: "orders"   },
       { id: "payments",  label: "Payments",  icon: "creditCard"   },
       { id: "refunds",   label: "Refunds",   icon: "refresh"      },
+      { id: "promotions",label: "Promotions",icon: "tag"          },
     ],
   },
   {

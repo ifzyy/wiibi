@@ -9,6 +9,7 @@ import { CalculatorModalProvider } from "./context/CalculatorModalContext.jsx";
 import Navigation from "./Nav";
 import Footer from "./Footer";
 import CartDrawer from "./components/CartDrawer.jsx";
+import FloatingSupport from "./components/FloatingSupport.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import AdminRoute from "./components/AdminRoute.jsx";
 // Public pages
@@ -49,6 +50,7 @@ const PublicLayout = ({ children }) => (
     <main className="flex-grow">{children}</main>
     <Footer />
     <CartDrawer />
+    <FloatingSupport />
   </div>
 );
 

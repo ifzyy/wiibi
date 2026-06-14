@@ -34,6 +34,7 @@ import analyticsRoutes    from './routes/analyticsRoutes.js';
 import customerRoutes     from './routes/customerRoutes.js';
 import paymentAdminRoutes from './routes/paymentAdminRoutes.js';
 import { adminSupportRouter, publicSupportRouter } from './routes/supportRoutes.js';
+import { adminPromoRouter, publicPromoRouter } from './routes/promoRoutes.js';
 
 // ── Jobs & utils ───────────────────────────────────────────────────────────────
 import cron                from 'node-cron';
@@ -169,6 +170,7 @@ app.use('/api/admin/analytics',      analyticsRoutes);
 app.use('/api/admin/customers',      customerRoutes);
 app.use('/api/admin/payments',       paymentAdminRoutes);
 app.use('/api/admin/support',        adminSupportRouter);
+app.use('/api/admin/promos',         adminPromoRouter);
 
 // ── Public ────────────────────────────────────────────────────────────────────
 app.use('/api/public',               publicRoutes);
@@ -187,6 +189,7 @@ app.use('/api/returns',              returnRoutes);
 
 // ── Support (public — customer ticket submission) ─────────────────────────────
 app.use('/api/support',              publicSupportRouter);
+app.use('/api/promo',                publicPromoRouter);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ERROR HANDLING

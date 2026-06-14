@@ -29,7 +29,6 @@
  */
 
 import StoreCarousel      from "../../../components/StoreCarousel";
-import TestimonialCarousel from "../../../components/TestimonialCarousel";
 
 import { useHomeEditor }  from "./hooks/useHomeEditor";
 import { ROLE }           from "./api/homepageApi";
@@ -37,11 +36,12 @@ import { ROLE }           from "./api/homepageApi";
 import { EditorToolbar, Toast, SectionDivider } from "./components/EditorUI";
 import EditableSection    from "./components/EditableSection";
 
-import HeroSection        from "./sections/HeroSection";
-import StatsSection       from "./sections/StatsSection";
-import BlogTeaserSection  from "./sections/BlogTeaserSection";
-import FaqTeaserSection   from "./sections/FaqTeaserSection";
-import CtaSection         from "./sections/CtaSection";
+import HeroSection         from "./sections/HeroSection";
+import StatsSection        from "./sections/StatsSection";
+import BlogTeaserSection   from "./sections/BlogTeaserSection";
+import TestimonialsSection from "./sections/TestimonialsSection";
+import FaqTeaserSection    from "./sections/FaqTeaserSection";
+import CtaSection          from "./sections/CtaSection";
 import { useState } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,10 +176,11 @@ function HomePageEditor() {
         <SectionDivider />
 
         {testimonials.content && (
-          <EditableSection label="Testimonials" onDelete={() => handleDeleteSection("testimonials")}>
-            {/* TestimonialCarousel is a read-only component. Add its own editor when ready. */}
-            <TestimonialCarousel testimonials={testimonials} />
-          </EditableSection>
+          <TestimonialsSection
+            testimonials={testimonials}
+            onUpdateContent={(field, value) => updateContent("testimonials", field, value)}
+            onDelete={() => handleDeleteSection("testimonials")}
+          />
         )}
 
         <SectionDivider />

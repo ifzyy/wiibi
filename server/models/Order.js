@@ -66,6 +66,15 @@ export default (sequelize, DataTypes) => {
         field:        'payment_status',
       },
 
+      // 'online' → paid via gateway before fulfilment.
+      // 'on_delivery' → confirmed immediately, payment collected on delivery.
+      paymentMethod: {
+        type:         DataTypes.ENUM('online', 'on_delivery'),
+        allowNull:    false,
+        defaultValue: 'online',
+        field:        'payment_method',
+      },
+
       totalAmount: {
         type:      DataTypes.DECIMAL(12, 2),
         allowNull: false,
@@ -73,12 +82,25 @@ export default (sequelize, DataTypes) => {
       },
 
       // Snapshot of the admin-configured delivery fee at checkout time.
-      // totalAmount already includes it: total = items subtotal + deliveryFee.
+      // totalAmount already includes it: total = items subtotal + deliveryFee − discount.
       deliveryFee: {
         type:         DataTypes.DECIMAL(12, 2),
         allowNull:    false,
         defaultValue: 0,
         field:        'delivery_fee',
+      },
+
+      // Promo discount applied at checkout + the code used. Snapshotted so a
+      // historical order keeps its real total if the promo later changes.
+      discount: {
+        type:         DataTypes.DECIMAL(12, 2),
+        allowNull:    false,
+        defaultValue: 0,
+      },
+      promoCode: {
+        type:      DataTypes.STRING(40),
+        allowNull: true,
+        field:     'promo_code',
       },
 
       // Estimated delivery date shown to the customer ("Expected"). Defaulted

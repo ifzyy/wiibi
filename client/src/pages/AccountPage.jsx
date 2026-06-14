@@ -3,7 +3,7 @@ import { Routes, Route, NavLink, useNavigate, useParams, useLocation } from 'rea
 import {
   User, ShoppingBag, Lock, LogOut, ChevronRight, Package,
   ArrowLeft, Calculator, MapPin, Bookmark, CreditCard,
-  Cookie, ChevronLeft, Edit2, Shield
+  Cookie, ChevronLeft, Edit2, Shield, LifeBuoy
 } from 'lucide-react';
 import api from '../utils/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -15,6 +15,8 @@ import SavedCartTab from './settings/SavedCart.jsx';
 import OrderDetail from './settings/OrderDetail.jsx';
 import PaymentSettings from './settings/PaymentSettings.jsx';
 import CookieSettings from './settings/CookieSettings.jsx';
+import SupportTickets from './settings/SupportTickets.jsx';
+import SupportTicketDetail from './settings/SupportTicketDetail.jsx';
 // ── Shared input style ────────────────────────────────────────────────────────
 const inputCls = 'w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-gray-900 text-sm font-medium focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all';
 
@@ -54,6 +56,7 @@ const AccountPage = () => {
     { icon: Calculator, label: 'Solar Calculator History',  href: '/account/solar-history'   },
     { icon: Package,    label: 'Track Order',               href: '/account/orders'          },
     { icon: Bookmark,   label: 'Saved Cart',                href: '/account/saved-cart'      },
+    { icon: LifeBuoy,   label: 'Support',                   href: '/account/support'         },
   ];
 
   const managementLinks = [
@@ -137,6 +140,8 @@ const AccountPage = () => {
                 <Route path="solar-history"        element={<SolarHistoryTab />}    />
                 <Route path="orders"               element={<TrackOrderTab />}      />
                 <Route path="orders/:orderId"      element={<OrderDetail />}        />
+                <Route path="support"              element={<SupportTickets />}     />
+                <Route path="support/:ticketNumber" element={<SupportTicketDetail />} />
                 <Route path="saved-cart"           element={<SavedCartTab />}       />
                 <Route path="security"             element={<AccountManagement />}        />
                 <Route path="payment"              element={<PaymentSettings />}        />

@@ -25,6 +25,7 @@ import { Op } from 'sequelize';
 import db from '../models/index.js';
 import { AppError, NotFoundError, ConflictError } from '../utils/AppError.js';
 import { getEmitter } from '../utils/emitter.js';
+import { sendSupportReplyEmail } from './EmailService.js';
 
 /* ── Status machine ───────────────────────────────────────────────────────── */
 
@@ -245,6 +246,77 @@ export const getTicketById = async (ticketId, { includeInternal = false } = {}) 
   return ticket;
 };
 
+/* ── Customer-facing reads ────────────────────────────────────────────────── */
+
+/**
+ * Build the ownership filter for a logged-in customer.
+ * Matches tickets they own by account OR by the email on the ticket
+ * (covers tickets opened as a guest before/with the same email).
+ */
+const ownershipWhere = ({ userId, email }) => {
+  const clauses = [];
+  if (userId) clauses.push({ userId });
+  if (email)  clauses.push({ requesterEmail: email });
+  // No identity at all → match nothing (defensive; routes are authenticated).
+  return clauses.length ? { [Op.or]: clauses } : { id: null };
+};
+
+/**
+ * List the logged-in customer's own tickets (newest activity first).
+ * Returns a lightweight shape for the inbox list — no message threads.
+ */
+export const getMyTickets = async ({ userId, email, page = 1, limit = 20 }) => {
+  const safeLimit = Math.min(limit, 50);
+  const offset    = (page - 1) * safeLimit;
+
+  const { rows, count } = await db.SupportTicket.findAndCountAll({
+    where:   ownershipWhere({ userId, email }),
+    attributes: ['id', 'ticketNumber', 'subject', 'type', 'status', 'priority', 'createdAt', 'updatedAt'],
+    include: [
+      { model: db.TicketTag, as: 'tags',  attributes: ['tag'] },
+      { model: db.Order,     as: 'order', attributes: ['orderNumber'], required: false },
+    ],
+    order:    [['updatedAt', 'DESC']],
+    limit:    safeLimit,
+    offset,
+    distinct: true,
+  });
+
+  return {
+    tickets:    rows,
+    pagination: { page, limit: safeLimit, total: count, pages: Math.ceil(count / safeLimit) },
+  };
+};
+
+/**
+ * Get one of the customer's own tickets with its public thread.
+ * Internal notes are never included. Throws NotFound if not owned.
+ */
+export const getMyTicketByNumber = async ({ ticketNumber, userId, email }) => {
+  const ticket = await db.SupportTicket.findOne({
+    where: {
+      ticketNumber,
+      ...ownershipWhere({ userId, email }),
+    },
+    include: [
+      {
+        model:   db.TicketMessage,
+        as:      'messages',
+        where:   { isInternal: false },
+        required: false,
+        include: [{ model: db.User, as: 'sender', attributes: ['id', 'firstName', 'lastName', 'avatarUrl'], required: false }],
+      },
+      { model: db.TicketTag, as: 'tags',  attributes: ['tag'] },
+      { model: db.Order,     as: 'order', attributes: ['id', 'orderNumber', 'totalAmount', 'status', 'paymentStatus'], required: false },
+      { model: db.User,      as: 'assignee', attributes: ['id', 'firstName', 'lastName'], required: false },
+    ],
+    order: [[{ model: db.TicketMessage, as: 'messages' }, 'createdAt', 'ASC']],
+  });
+
+  if (!ticket) throw new NotFoundError('Ticket not found');
+  return ticket;
+};
+
 /* ── updateTicketStatus ───────────────────────────────────────────────────── */
 
 export const updateTicketStatus = async (ticketId, {
@@ -409,6 +481,12 @@ export const addMessage = async (ticketId, {
       senderType,
       isInternal,
     });
+
+    // Notify the other party by email — fire-and-forget after commit.
+    // Internal notes and system messages never email the customer.
+    if (!isInternal && (senderType === 'admin' || senderType === 'customer')) {
+      sendSupportReplyEmail({ ticketId, senderType, body }).catch(() => {});
+    }
 
     return message;
 

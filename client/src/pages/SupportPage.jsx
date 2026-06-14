@@ -7,6 +7,7 @@
  * will reference. Tickets appear live in the admin Support Desk.
  */
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LifeBuoy, Loader2, CheckCircle, AlertCircle, ChevronDown } from 'lucide-react';
 import api from '../utils/api.js';
 
@@ -33,6 +34,7 @@ const inputClass =
   'outline-none focus:border-[#FFAA14] transition-colors placeholder:text-gray-300 bg-white';
 
 export default function SupportPage() {
+  const navigate = useNavigate();
   const [form,    setForm]    = useState(BLANK);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
@@ -84,12 +86,18 @@ export default function SupportPage() {
               <p className="text-lg font-black text-[#1A1102] font-mono">{done.ticketNumber}</p>
             </div>
           )}
-          <div>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
-              onClick={() => { setDone(null); setForm(BLANK); }}
+              onClick={() => navigate('/account/support')}
               className="px-8 py-3.5 rounded-2xl bg-[#FFAA14] text-white font-black text-sm hover:bg-[#e69912] transition-colors"
             >
-              Submit another request
+              View my requests
+            </button>
+            <button
+              onClick={() => { setDone(null); setForm(BLANK); }}
+              className="px-8 py-3.5 rounded-2xl border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition-colors"
+            >
+              Submit another
             </button>
           </div>
         </div>
@@ -197,7 +205,10 @@ export default function SupportPage() {
         </button>
 
         <p className="text-[11px] text-gray-400 text-center">
-          Already have a ticket? Reply to the email thread, or quote your ticket number when contacting us.
+          Already have a request?{' '}
+          <button type="button" onClick={() => navigate('/account/support')} className="font-bold text-[#FFAA14] hover:underline">
+            View &amp; reply to your tickets
+          </button>
         </p>
       </form>
     </div>

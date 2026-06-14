@@ -33,39 +33,70 @@ const TRANSITIONS = {
 const Bubble = ({ msg }) => {
   const isAdmin  = msg.senderType === 'admin';
   const isSystem = msg.senderType === 'system';
-  const name = msg.sender
-    ? [msg.sender.firstName, msg.sender.lastName].filter(Boolean).join(' ') || 'Admin'
-    : isAdmin ? 'Admin' : 'Customer';
 
   if (isSystem) return (
-    <div style={{ textAlign: 'center', margin: '10px 0' }}>
+    <div style={{ textAlign: 'center', margin: '12px 0' }}>
       <span style={{ fontSize: 11, color: C.inkFaint, background: C.bg, padding: '3px 14px', borderRadius: 99, border: `1px solid ${C.border}` }}>
         {msg.body}
       </span>
     </div>
   );
 
+  // Role is the source of truth for who sent it. Only fall back to the role
+  // label when the sender's User record has no name — NEVER label a customer
+  // message "Admin" just because the name is blank.
+  const senderName = [msg.sender?.firstName, msg.sender?.lastName].filter(Boolean).join(' ');
+  const roleLabel  = isAdmin ? 'Support team' : 'Customer';
+  const name       = senderName || roleLabel;
+  const initial    = (senderName[0] || (isAdmin ? 'S' : 'C')).toUpperCase();
+
+  const avatar = (
+    <div style={{
+      width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 12, fontWeight: 800,
+      background: isAdmin ? C.amberLight : '#E8E8E0',
+      color:      isAdmin ? '#A16207'    : C.inkMid,
+    }}>
+      {initial}
+    </div>
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: isAdmin ? 'flex-end' : 'flex-start', marginBottom: 16 }}>
-      <div style={{ fontSize: 11, color: C.inkFaint, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontWeight: 600, color: C.inkMid }}>{name}</span>
-        <span>{fmtDate(msg.createdAt)}</span>
-        {msg.isInternal && (
-          <span style={{ background: '#FEF9C3', color: '#A16207', padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
-            INTERNAL
+    <div style={{
+      display: 'flex', gap: 8, marginBottom: 16,
+      flexDirection: isAdmin ? 'row-reverse' : 'row',
+    }}>
+      {avatar}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: isAdmin ? 'flex-end' : 'flex-start', maxWidth: '82%' }}>
+        <div style={{ fontSize: 11, color: C.inkFaint, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexDirection: isAdmin ? 'row-reverse' : 'row' }}>
+          <span style={{ fontWeight: 700, color: C.inkMid }}>{name}</span>
+          <span style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase',
+            padding: '1px 6px', borderRadius: 4,
+            background: isAdmin ? C.amberLight : '#E8E8E0',
+            color:      isAdmin ? '#A16207'    : C.inkMid,
+          }}>
+            {isAdmin ? 'Support' : 'Customer'}
           </span>
-        )}
-      </div>
-      <div style={{
-        maxWidth: '85%', padding: '10px 14px', borderRadius: 12,
-        fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        background: msg.isInternal ? '#FFFBEB' : isAdmin ? C.amberLight : C.bg,
-        border:     `1px solid ${msg.isInternal ? '#FDE68A' : isAdmin ? C.amberBorder : C.border}`,
-        color:      C.ink,
-        borderBottomRightRadius: isAdmin ? 2 : 12,
-        borderBottomLeftRadius:  isAdmin ? 12 : 2,
-      }}>
-        {msg.body}
+          <span>{fmtDate(msg.createdAt)}</span>
+          {msg.isInternal && (
+            <span style={{ background: '#FEF9C3', color: '#A16207', padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 800 }}>
+              INTERNAL NOTE
+            </span>
+          )}
+        </div>
+        <div style={{
+          padding: '10px 14px', borderRadius: 12,
+          fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          background: msg.isInternal ? '#FFFBEB' : isAdmin ? C.amberLight : C.surface,
+          border:     `1px solid ${msg.isInternal ? '#FDE68A' : isAdmin ? C.amberBorder : C.border}`,
+          color:      C.ink,
+          borderBottomRightRadius: isAdmin ? 3 : 12,
+          borderBottomLeftRadius:  isAdmin ? 12 : 3,
+        }}>
+          {msg.body}
+        </div>
       </div>
     </div>
   );
@@ -290,16 +321,29 @@ export default function TicketDrawer({ ticketId, onClose, onStatusChange, onMess
           </span>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.inkMid, cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={isInternal} onChange={e => setIsInternal(e.target.checked)} />
-            Internal only
+            Internal note
           </label>
         </div>
+
+        {/* What each mode does — clarifies the internal toggle */}
+        <div style={{
+          fontSize: 11, lineHeight: 1.5, marginBottom: 8, padding: '7px 10px', borderRadius: C.rSm,
+          background: isInternal ? '#FFFBEB' : C.bg,
+          border:     `1px solid ${isInternal ? '#FDE68A' : C.border}`,
+          color:      isInternal ? '#8A6D2B' : C.inkMid,
+        }}>
+          {isInternal
+            ? '🔒 Private team note. The customer never sees this and is not emailed — use it for context, handover notes, or reminders.'
+            : '↩ This is sent to the customer and emails them a notification.'}
+        </div>
+
         <textarea
           value={reply}
           onChange={e => setReply(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isInternal
-            ? 'Internal note — not visible to customer…'
-            : 'Type a reply… (Ctrl + Enter to send)'}
+            ? 'Internal note — only your team can see this…'
+            : 'Type a reply to the customer… (Ctrl + Enter to send)'}
           rows={3}
           style={{
             width: '100%', padding: '10px 12px', boxSizing: 'border-box',

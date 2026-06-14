@@ -37,6 +37,7 @@ import {
   sendOrderStatusEmail,
   sendPaymentConfirmationEmail,
 } from './EmailService.js';
+import { findUsablePromo, evaluatePromo } from './PromoService.js';
 
 /* ── Status machine ───────────────────────────────────────────────────────── */
 
@@ -270,6 +271,8 @@ export const createOrderFromCart = async (userId, {
   currency       = 'NGN',
   guestEmail     = null,
   guestToken     = null,
+  promoCode      = null,
+  paymentMethod  = 'online',
 }) => {
   // Avoid logging PII (email / guest token). IDs and presence flags only.
   console.log(`[OrderService] Starting checkout userId=${userId ?? 'guest'} hasIdempotencyKey=${!!idempotencyKey}`);
@@ -324,7 +327,31 @@ export const createOrderFromCart = async (userId, {
 
     const subtotal         = calculateCartTotal(cart.items);
     const deliveryFee      = await getDeliveryFee(cart.items);
-    const totalAmount      = subtotal + deliveryFee;
+
+    // ── 6b. Promo code — validate + reserve a redemption inside the txn ─────
+    // Recomputed server-side from the locked promo row; the client's discount
+    // is never trusted. The row lock makes the usage-limit check race-safe.
+    let discount     = 0;
+    let appliedPromo = null;
+    if (promoCode) {
+      const promo = await findUsablePromo(promoCode, { transaction });
+      const result = evaluatePromo(promo, subtotal);   // throws AppError if invalid
+      discount     = result.discount;
+      appliedPromo = result.promo;
+      await appliedPromo.increment('usedCount', { by: 1, transaction });
+    }
+
+    // Pay on Delivery is not available with a promo code — discounted orders
+    // must be paid online so the discount is captured at the gateway.
+    const isCod = paymentMethod === 'on_delivery';
+    if (isCod && discount > 0) {
+      throw new AppError(
+        'Pay on Delivery isn’t available with a promo code. Remove the code or pay online to use the discount.',
+        422
+      );
+    }
+
+    const totalAmount      = Math.max(0, subtotal + deliveryFee - discount);
     const paymentReference = generatePaymentReference();
 
     // Default delivery estimate: ~7 days for normal items, ~30 days when the
@@ -341,10 +368,15 @@ export const createOrderFromCart = async (userId, {
       guestEmail:      resolvedEmail || null,
       guestToken:      guestToken    || null,
       orderNumber:     generateOrderNumber(),
-      status:          'pending',
+      // COD is confirmed immediately (no online payment step); online orders
+      // wait in 'pending' until the gateway confirms payment.
+      status:          isCod ? 'processing' : 'pending',
       paymentStatus:   'unpaid',
+      paymentMethod,
       totalAmount,
       deliveryFee,
+      discount,
+      promoCode:       appliedPromo?.code ?? null,
       expectedDelivery,
       currency,
       shippingAddress,
@@ -372,11 +404,23 @@ export const createOrderFromCart = async (userId, {
 
     // ── 10. Initial tracking event ────────────────────────────────────────
     await addTrackingEvent(
-      order.id, 'pending', TRACKING_NOTES.pending(), userId, transaction
+      order.id,
+      isCod ? 'processing' : 'pending',
+      isCod ? 'Order confirmed — Pay on Delivery' : TRACKING_NOTES.pending(),
+      userId,
+      transaction
     );
 
     // ── 11. Commit ────────────────────────────────────────────────────────
     await transaction.commit();
+
+    // COD orders are confirmed at creation, so send the confirmation email now
+    // (online orders email on payment success instead). Fire-and-forget.
+    if (isCod) {
+      sendOrderStatusEmail(order, {
+        note: `You chose Pay on Delivery. Please have ₦${parseFloat(totalAmount).toLocaleString('en-NG')} ready for our delivery agent.`,
+      });
+    }
 
     return getOrderById(order.id, userId, guestToken);
 
