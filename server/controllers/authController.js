@@ -102,11 +102,9 @@ export const handleVerifyOtp = asyncHandler(async (req, res) => {
   const guestToken = req.headers['x-guest-token'] ?? null;
   await handlePostAuthCleanup(result.user.id, guestToken);
 
-  return sendSuccess(
-    res,
-    { accessToken: result.accessToken, user: result.user },
-    'Login successful'
-  );
+  // Tokens are delivered ONLY as httpOnly cookies (set above) — never in the
+  // response body, so JS/XSS can't read them and they don't land in logs.
+  return sendSuccess(res, { user: result.user }, 'Login successful');
 });
 
 // ── Password login ────────────────────────────────────────────────────────────
@@ -122,11 +120,8 @@ export const handleLoginPassword = asyncHandler(async (req, res) => {
   const guestToken = req.headers['x-guest-token'] ?? null;
   await handlePostAuthCleanup(result.user.id, guestToken);
 
-  return sendSuccess(
-    res,
-    { accessToken: result.accessToken, user: result.user },
-    'Login successful'
-  );
+  // Tokens are delivered ONLY as httpOnly cookies (set above) — never in body.
+  return sendSuccess(res, { user: result.user }, 'Login successful');
 });
 
 // ── Password management ───────────────────────────────────────────────────────
@@ -153,7 +148,8 @@ export const handleRefreshToken = asyncHandler(async (req, res) => {
 
   setAuthCookies(res, result);
 
-  return sendSuccess(res, { accessToken: result.accessToken }, 'Token refreshed');
+  // New tokens are set as httpOnly cookies only — nothing sensitive in the body.
+  return sendSuccess(res, null, 'Token refreshed');
 });
 
 // ── Logout ────────────────────────────────────────────────────────────────────

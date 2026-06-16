@@ -2,7 +2,7 @@ import { C, FULFILLMENT, PAYMENT, EVENT_LABEL } from "../constants.js";
 import { fmt, fmtDate, fmtDateTime, fmtRelative } from "../utils/format.js";
 import { getOrderNum, getCustomerName, getCustomerEmail, getCustomerPhone, getTotal, getItemImage, getItemName, getItemSku } from "../utils/orderHelpers.js";
 import { useOrderDetail } from "../hooks/useOrderDetails.js";
-import { Badge, Avatar, Skeleton, DrawerSection, KVRow } from "./ui.jsx";
+import { Badge, Avatar, Skeleton, DrawerSection, KVRow } from "./Ui.jsx";
 
 /* ─── Timeline step ───────────────────────────────────────────────────────── */
 const TimelineStep = ({ event, isLatest, isLast }) => (

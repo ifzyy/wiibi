@@ -7,12 +7,16 @@
  * SMTP_HOST is unset, so dev environments work without a mail account):
  *   SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS
  *   EMAIL_FROM       e.g. "Wiibi Energy <no-reply@wiibienergy.com>"
- *   FRONTEND_URL     used for the "View your order" button
+ *   SUPPORT_EMAIL    Reply-To + footer contact (defaults to the EMAIL_FROM address)
+ *   COMPANY_ADDRESS  postal address shown in the footer (CAN-SPAM)
+ *   FRONTEND_URL     used for the order / support ticket links
  *   BACKEND_URL      used to absolutize relative product image URLs
  *
  * Templates are full order summaries (line items with product images,
  * totals, shipping address, tracking box, CTA button) — built with table
- * layout + inline styles for email-client compatibility.
+ * layout + inline styles for email-client compatibility. Every message is
+ * sent multipart/alternative (HTML + auto-generated plain text) with a
+ * Reply-To that reaches a person, for deliverability.
  *
  * All send functions are FIRE-AND-FORGET SAFE: they never throw. Callers in
  * OrderService invoke them after the DB transaction commits — a mail outage
@@ -24,6 +28,17 @@ import db from '../models/index.js';
 import logger from '../utils/logger.js';
 
 const APP_NAME = process.env.APP_NAME || 'Wiibi Energy';
+
+// Contact / company details surfaced in every footer (CAN-SPAM: a real reply
+// address + physical postal address keep transactional mail out of spam).
+const SUPPORT_EMAIL =
+  process.env.SUPPORT_EMAIL ||
+  process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] ||
+  'support@wiibienergy.com';
+const WEBSITE_URL =
+  (process.env.FRONTEND_URL || 'https://wiibienergy.com').replace(/\/$/, '');
+const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || 'Lagos, Nigeria';
+
 const BRAND = {
   amber:  '#FFAA14',
   ink:    '#1A1102',
@@ -128,6 +143,35 @@ const orderUrl = (order) => {
   const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
   return base ? `${base}/orders/${order.id}` : null;
 };
+
+/** Customer-facing ticket thread, nested under the authenticated account area. */
+const ticketUrl = (ticketNumber) => {
+  const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  return base ? `${base}/account/support/${ticketNumber}` : null;
+};
+
+/**
+ * Plain-text fallback derived from the rendered HTML. A multipart/alternative
+ * (text + HTML) body is an email-deliverability baseline — HTML-only messages
+ * score worse with spam filters and break in text-only clients.
+ */
+const htmlToText = (html) =>
+  String(html || '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    // hidden preheader div — strip so it doesn't lead the text body
+    .replace(/<div[^>]*mso-hide:all[^>]*>[\s\S]*?<\/div>/gi, '')
+    .replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2 ($1)')
+    .replace(/<\/(p|tr|h1|h2|div|td|table)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, ' ')
+    .split('\n').map((l) => l.trim()).join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Status copy                                                                */
@@ -324,7 +368,9 @@ const layout = ({ preheader, heading, greeting, intro, contentHtml, order }) => 
             <p style="margin:0;font-size:14px;color:${BRAND.text};line-height:1.7;">${intro}</p>
             ${contentHtml}
             <p style="margin:28px 0 0;font-size:13px;color:${BRAND.muted};line-height:1.7;">
-              Need help with this order? Just reply to this email and our team will get back to you.
+              Need help with this order? Just reply to this email or write to
+              <a href="mailto:${SUPPORT_EMAIL}" style="color:${BRAND.amber};font-weight:700;text-decoration:none;">${SUPPORT_EMAIL}</a>
+              — our team will get back to you.
             </p>
           </td></tr>
 
@@ -334,9 +380,14 @@ const layout = ({ preheader, heading, greeting, intro, contentHtml, order }) => 
             <p style="margin:0 0 10px;font-size:12px;color:${BRAND.muted};line-height:1.6;">
               Solar systems, inverters, batteries &amp; professional installation.
             </p>
+            <p style="margin:0 0 10px;font-size:12px;color:${BRAND.muted};line-height:1.6;">
+              Questions? Email <a href="mailto:${SUPPORT_EMAIL}" style="color:${BRAND.amber};font-weight:700;text-decoration:none;">${SUPPORT_EMAIL}</a>
+              &nbsp;·&nbsp; <a href="${WEBSITE_URL}" style="color:${BRAND.amber};font-weight:700;text-decoration:none;">Visit our store</a>
+            </p>
             <p style="margin:0;font-size:11px;color:${BRAND.muted};line-height:1.6;">
               You’re receiving this email because an order was placed with this address at ${APP_NAME}.
               This is a transactional message about your order — it’s not marketing.
+              <br/>${escapeHtml(COMPANY_ADDRESS)}
               <br/>© ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
             </p>
           </td></tr>
@@ -351,17 +402,25 @@ const layout = ({ preheader, heading, greeting, intro, contentHtml, order }) => 
 /*  Send primitive                                                             */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-const send = async ({ to, subject, html }) => {
+const send = async ({ to, subject, html, text, replyTo }) => {
   const transporter = getTransporter();
   if (!transporter) {
     logger.info(`[EmailService] (disabled) would send "${subject}" to ${to}`);
     return false;
   }
   await transporter.sendMail({
-    from: process.env.EMAIL_FROM || `${APP_NAME} <no-reply@wiibienergy.com>`,
+    from:    process.env.EMAIL_FROM || `${APP_NAME} <no-reply@wiibienergy.com>`,
+    // Replies reach a person, not the no-reply From address.
+    replyTo: replyTo || SUPPORT_EMAIL,
     to,
     subject,
     html,
+    text: text || htmlToText(html),
+    headers: {
+      // Helps clients thread/identify our automated mail without marking spam.
+      'X-Auto-Response-Suppress': 'All',
+      'Auto-Submitted':           'auto-generated',
+    },
   });
   logger.info(`[EmailService] sent "${subject}" to ${to}`);
   return true;
@@ -495,8 +554,13 @@ const supportLayout = ({ preheader, heading, greeting, bodyHtml }) => `<!doctype
             ${bodyHtml}
           </td></tr>
           <tr><td style="background:${BRAND.panel};border:1px solid ${BRAND.border};border-top:none;border-radius:0 0 16px 16px;padding:22px 36px;">
+            <p style="margin:0 0 8px;font-size:12px;color:${BRAND.muted};line-height:1.6;">
+              Reach us any time at <a href="mailto:${SUPPORT_EMAIL}" style="color:${BRAND.amber};font-weight:700;text-decoration:none;">${SUPPORT_EMAIL}</a>
+              &nbsp;·&nbsp; <a href="${WEBSITE_URL}" style="color:${BRAND.amber};font-weight:700;text-decoration:none;">${APP_NAME}</a>
+            </p>
             <p style="margin:0;font-size:11px;color:${BRAND.muted};line-height:1.6;">
               This is a notification about your support conversation with ${APP_NAME}.
+              <br/>${escapeHtml(COMPANY_ADDRESS)}
               <br/>© ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
             </p>
           </td></tr>
@@ -540,8 +604,7 @@ export const sendSupportReplyEmail = async ({ ticketId, senderType, body }) => {
       const to = ticket.requesterEmail;
       if (!to) return false;
       const firstName = ticket.requesterName?.split(' ')[0];
-      const link = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
-      const href = link ? `${link}/support/tickets/${ticket.ticketNumber}` : null;
+      const href = ticketUrl(ticket.ticketNumber);
 
       return await send({
         to,
@@ -570,6 +633,7 @@ export const sendSupportReplyEmail = async ({ ticketId, senderType, body }) => {
 
     return await send({
       to,
+      replyTo: ticket.requesterEmail || undefined,   // admin can reply straight to the customer
       subject: `Customer reply: ${ticket.subject} [${ticket.ticketNumber}]`,
       html: supportLayout({
         preheader: 'A customer has replied to a support ticket.',

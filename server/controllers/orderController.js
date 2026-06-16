@@ -17,6 +17,7 @@ import {
 import {
   initiateRefund,
 } from '../services/paymentProvider.js';
+import { recordAudit } from '../services/AuditService.js';
 
 /* ── Schemas ─────────────────────────────────────────────────────────────── */
 
@@ -303,6 +304,14 @@ export const handleUpdateStatus = asyncHandler(async (req, res) => {
     refund:            value.refund ?? null,
     actorId:           req.user.id,
   });
+  await recordAudit({
+    actorId:    req.user.id,
+    action:     'order.status_changed',
+    entityType: 'order',
+    entityId:   req.params.id,
+    metadata:   { status: value.status, paymentStatus: value.paymentStatus ?? null },
+    ip:         req.ip,
+  });
   return sendSuccess(res, order, 'Order status updated');
 });
 
@@ -334,6 +343,15 @@ export const handleAdminCancel = asyncHandler(async (req, res) => {
       refundAmount:     refundAmount,   // null = full refund, or admin-specified amount
     });
   }
+
+  await recordAudit({
+    actorId:    req.user.id,
+    action:     'order.cancelled_by_admin',
+    entityType: 'order',
+    entityId:   req.params.id,
+    metadata:   { reason: value.reason ?? null, needsRefund, refundAmount: refundAmount ?? null },
+    ip:         req.ip,
+  });
 
   const message = needsRefund
     ? refundResult?.manualRequired

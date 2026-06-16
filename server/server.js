@@ -31,6 +31,7 @@ import solarAdminRoutes    from './routes/solarAdminRoutes.js';
 
 // ── New dashboard routes ───────────────────────────────────────────────────────
 import analyticsRoutes    from './routes/analyticsRoutes.js';
+import auditRoutes        from './routes/auditRoutes.js';
 import customerRoutes     from './routes/customerRoutes.js';
 import paymentAdminRoutes from './routes/paymentAdminRoutes.js';
 import { adminSupportRouter, publicSupportRouter } from './routes/supportRoutes.js';
@@ -50,10 +51,16 @@ const app        = express();
 const httpServer = createServer(app);   // ← wrap app in http.Server for socket.io
 const PORT       = process.env.PORT || 5000;
 
+// Single source of allowed browser origins for BOTH HTTP CORS and socket.io.
+// Lists the public site and the admin subdomain in production, e.g.
+//   ALLOWED_ORIGINS=https://wiibienergy.com,https://admin.wiibienergy.com
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean))
+  || ['http://localhost:5173'];
+
 // ── socket.io ─────────────────────────────────────────────────────────────────
 const io = new SocketIO(httpServer, {
   cors: {
-    origin:      process.env.FRONTEND_URL ?? 'http://localhost:5173',
+    origin:      ALLOWED_ORIGINS,
     credentials: true,
   },
 });
@@ -69,7 +76,7 @@ const resolveSocketUser = async (socket) => {
     const token     = match ? decodeURIComponent(match[1]) : socket.handshake.auth?.token;
     if (!token) return null;
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user    = await db.User.findByPk(decoded.id, { attributes: ['id', 'role', 'isActive'] });
     return user?.isActive ? { user, expMs: decoded.exp * 1000 } : null;
   } catch {
@@ -115,7 +122,7 @@ app.use(compression());
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin:      process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:5173',
+  origin:      ALLOWED_ORIGINS,
   credentials: true,
 }));
 
@@ -167,6 +174,7 @@ app.use('/api/admin/solar',          solarAdminRoutes);
 
 // ── New admin dashboard modules ───────────────────────────────────────────────
 app.use('/api/admin/analytics',      analyticsRoutes);
+app.use('/api/admin/audit-logs',     auditRoutes);
 app.use('/api/admin/customers',      customerRoutes);
 app.use('/api/admin/payments',       paymentAdminRoutes);
 app.use('/api/admin/support',        adminSupportRouter);

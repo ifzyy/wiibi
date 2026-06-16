@@ -28,11 +28,13 @@ router.get ('/my/:id',         optionalAuth,  handleGetMyOrder);         // gues
 router.post('/:id/cancel',     optionalAuth,  handleCustomerCancel);     // guest + auth
 
 /* ── Admin routes ─────────────────────────────────────────────────────────── */
+// Staff may view orders and move fulfillment status forward. Cancelling an
+// order can trigger a REFUND (money out), so /admin-cancel stays admin-only.
 
-router.get   ('/',                 authMiddleware, requireRole('admin'), handleAdminGetOrders);
-router.get   ('/export',           authMiddleware, requireRole('admin'), handleExportOrders);
-router.get   ('/:id',              authMiddleware, requireRole('admin'), handleAdminGetOrder);
-router.patch ('/:id/status',       authMiddleware, requireRole('admin'), handleUpdateStatus);
-router.post  ('/:id/admin-cancel', authMiddleware, requireRole('admin'), handleAdminCancel);
+router.get   ('/',                 authMiddleware, requireRole('admin', 'staff'), handleAdminGetOrders);
+router.get   ('/export',           authMiddleware, requireRole('admin', 'staff'), handleExportOrders);
+router.get   ('/:id',              authMiddleware, requireRole('admin', 'staff'), handleAdminGetOrder);
+router.patch ('/:id/status',       authMiddleware, requireRole('admin', 'staff'), handleUpdateStatus);
+router.post  ('/:id/admin-cancel', authMiddleware, requireRole('admin'),          handleAdminCancel);
 
 export default router;

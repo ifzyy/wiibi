@@ -28,7 +28,8 @@ import {
 export const adminSupportRouter = express.Router();
 
 adminSupportRouter.use(authenticate);
-adminSupportRouter.use(requireRole('admin'));
+// Support desk is part of the staff scope.
+adminSupportRouter.use(requireRole('admin', 'staff'));
 
 adminSupportRouter.get('/stats',                handleGetStats);
 adminSupportRouter.get('/',                     handleGetTickets);

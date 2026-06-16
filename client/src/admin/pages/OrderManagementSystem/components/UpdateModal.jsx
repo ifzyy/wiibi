@@ -2,7 +2,7 @@ import { useState } from "react";
 import { C, FULFILLMENT, PAYMENT, REFUND_METHODS } from "../constants.js";
 import { fmt } from "../utils/format.js";
 import { getOrderNum, getTotal, isNewRefund } from "../utils/orderHelpers.js";
-import { Chip, Inp, inputStyle, SectionLabel, Divider } from "./ui.jsx";
+import { Chip, Inp, inputStyle, SectionLabel, Divider } from "./Ui.jsx";
 
 const UpdateModal = ({ order, onClose, onSave }) => {
   const [fStatus,      setFStatus]      = useState(order.fulfillmentStatus ?? order.status ?? "pending");

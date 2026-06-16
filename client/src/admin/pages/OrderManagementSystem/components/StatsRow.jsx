@@ -1,4 +1,4 @@
-import { StatCard } from "./ui.jsx";
+import { StatCard } from "./Ui.jsx";
 import { fmt } from "../utils/format.js";
 const StatsRow = ({ stats, totalOrders, refundCount, loading }) => {
   console.log(stats);

@@ -1,5 +1,5 @@
 import { C, FULFILLMENT, PAYMENT } from "../constants.js";
-import { inputStyle } from "./ui.jsx";
+import { inputStyle } from "./Ui.jsx";
 
 const FilterBar = ({
   orders,

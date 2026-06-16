@@ -10,6 +10,8 @@ import EditableImage   from "../components/EditableImage";
 import EditableButton  from "../components/EditableButton";
 import EditableSection from "../components/EditableSection";
 import { ROLE }        from "../api/homepageApi";
+import HeroVideo       from "../../../../components/HeroVideo";
+import { getYouTubeId } from "../../../../utils/youtube";
 
 /**
  * @param {{
@@ -83,17 +85,38 @@ const HeroSection = ({
             </a>
           </div>
 
-          {/* Right column: hero image */}
-          <div className="flex-[1.1] w-full aspect-[4/3] rounded-sm overflow-hidden relative">
-            <EditableImage
-              src={heroImageUrl}
-              alt="Hero"
-              sectionId={hero.id}
-              role={ROLE.HERO}
-              onUrlChange={(url) => onMediaSuccess(ROLE.HERO, url)}
-              className="w-full h-full object-cover"
-              emptyLabel="Add Hero Image"
-            />
+          {/* Right column: hero media — video (if a YouTube URL is set) or image */}
+          <div className="flex-[1.1] w-full space-y-2">
+            {getYouTubeId(hero.content.hero_video_url) ? (
+              <HeroVideo url={hero.content.hero_video_url} />
+            ) : (
+              <div className="w-full aspect-[4/3] rounded-sm overflow-hidden relative">
+                <EditableImage
+                  src={heroImageUrl}
+                  alt="Hero"
+                  sectionId={hero.id}
+                  role={ROLE.HERO}
+                  onUrlChange={(url) => onMediaSuccess(ROLE.HERO, url)}
+                  className="w-full h-full object-cover"
+                  emptyLabel="Add Hero Image"
+                />
+              </div>
+            )}
+
+            {/* Hero video URL — paste a YouTube link to autoplay it in place of
+                the image; clear it to fall back to the image above. */}
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Hero video (YouTube URL)
+              </span>
+              <input
+                type="text"
+                value={hero.content.hero_video_url || ""}
+                onChange={(e) => onUpdateContent("hero_video_url", e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=…  (leave blank to use the image)"
+                className="mt-1 w-full text-xs border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+              />
+            </label>
           </div>
         </div>
       </div>

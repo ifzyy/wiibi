@@ -51,6 +51,7 @@ import {
   updateRefundStatus,
   getOrderById,
 } from '../services/OrderService.js';
+import { recordAudit } from '../services/AuditService.js';
 
 const FRONTEND_URL  = process.env.FRONTEND_URL  ?? 'http://localhost:5173';
 const BACKEND_URL   = process.env.BACKEND_URL   ?? 'http://localhost:5000';
@@ -369,6 +370,15 @@ export const handleAdminRefund = asyncHandler(async (req, res) => {
     status:           finalStatus,
   });
 
+  await recordAudit({
+    actorId:    req.user.id,
+    action:     'payment.refunded',
+    entityType: 'order',
+    entityId:   orderId,
+    metadata:   { refundId: refund.id, amount: refundAmount, method: finalMethod, status: finalStatus, manualRequired },
+    ip:         req.ip,
+  });
+
   const message = manualRequired
     ? 'Refund logged as manual_required — process via Bank Transfer and mark complete when done'
     : 'Refund initiated via payment provider';
@@ -408,6 +418,15 @@ export const handleMarkRefundComplete = asyncHandler(async (req, res) => {
       updatedBy: req.user.id,
     });
   }
+
+  await recordAudit({
+    actorId:    req.user.id,
+    action:     'payment.refund_marked_complete',
+    entityType: 'refund',
+    entityId:   refund.id,
+    metadata:   { orderId: refund.orderId, amount: refund.amount, note: note ?? null },
+    ip:         req.ip,
+  });
 
   return sendSuccess(res, updated, 'Refund marked as complete');
 });

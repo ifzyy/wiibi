@@ -2,7 +2,7 @@
  * routes/analyticsRoutes.js
  */
 import express from 'express';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, optionalAuth } from '../middleware/auth.js';
 import requireRole from '../middleware/requireRole.js';
 import {
   handleGetDashboard,
@@ -15,8 +15,10 @@ import {
 
 const router = express.Router();
 
-// All analytics routes are admin-only except /track
-router.post('/track', handleTrackPageView);   // public — called by frontend
+// All analytics routes are admin-only except /track.
+// optionalAuth so a logged-in visitor's saved cookie consent can be honored
+// (analytics opt-out → the view is not recorded). Guests pass through as null.
+router.post('/track', optionalAuth, handleTrackPageView);   // public — called by frontend
 
 router.use(authenticate);
 router.use(requireRole('admin'));

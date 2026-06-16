@@ -2,6 +2,8 @@ import heroFlower from "../assets/hero-flower.svg";
 import { useHomepage,useBlogPosts,useFaqs } from "../hooks/queries";
 import StoreCarousel from "../components/StoreCarousel";
 import TestimonialCarousel from "../components/TestimonialCarousel";
+import HeroVideo from "../components/HeroVideo";
+import { getYouTubeId } from "../utils/youtube";
 import { ChevronRight, ChevronLeft } from "lucide-react";
 // ── Skeleton primitives ────────────────────────────────────────────────────────
 const Skeleton = ({ className = "" }) => (
@@ -202,10 +204,15 @@ console.log(data)
                 </a>
               </div>
 
-              {/* Right Image */}
-              <div className="flex-[1.1] w-full aspect-[4/3] rounded-sm overflow-hidden">
-                <img src={heroImg} className="w-full h-auto object-cover" alt="Solar installation" />
-              </div>
+              {/* Right media — autoplaying solar video when a YouTube URL is
+                  set in the CMS, otherwise the still hero image. */}
+              {getYouTubeId(hero.content.hero_video_url) ? (
+                <HeroVideo url={hero.content.hero_video_url} className="flex-[1.1]" />
+              ) : (
+                <div className="flex-[1.1] w-full aspect-[4/3] rounded-sm overflow-hidden">
+                  <img src={heroImg} className="w-full h-auto object-cover" alt="Solar installation" />
+                </div>
+              )}
             </div>
           </div>
 

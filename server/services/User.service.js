@@ -22,10 +22,14 @@ export const getAllUsers = async ({ page = 1, limit = 20 } = {}) => {
 
 export const updateProfile = async (id, data) => {
   const user    = await getUserById(id);
-  const allowed = ['firstName', 'lastName', 'email', 'avatarUrl', 'shippingAddress'];
+  const allowed = ['firstName', 'lastName', 'email', 'avatarUrl', 'shippingAddress', 'cookieConsent'];
   const updates = {};
   for (const key of allowed) {
     if (data[key] !== undefined) updates[key] = data[key];
+  }
+  // Stamp when the consent decision was recorded (server-authoritative).
+  if (updates.cookieConsent && typeof updates.cookieConsent === 'object') {
+    updates.cookieConsent = { ...updates.cookieConsent, updatedAt: new Date().toISOString() };
   }
   // The model attribute is `phoneNumber` (column phone_number); the API field is
   // `phone`. Map it explicitly — otherwise Sequelize drops the unknown `phone`
@@ -37,7 +41,7 @@ export const updateProfile = async (id, data) => {
 };
 
 export const updateUserRole = async (id, role) => {
-  if (!['user', 'admin'].includes(role)) throw new ValidationError('Role must be user or admin');
+  if (!['user', 'staff', 'admin'].includes(role)) throw new ValidationError('Role must be user, staff or admin');
   const user = await getUserById(id);
   await user.update({ role });
   return user.toSafeJSON();

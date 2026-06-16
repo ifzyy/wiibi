@@ -25,10 +25,45 @@
 
 import { randomUUID } from 'crypto';
 import { Op }         from 'sequelize';
+import Joi            from 'joi';
 import db             from '../models/index.js';
 import { runSizing, LOCATIONS, INVERTER_STEPS } from '../services/SolarCalculatorService.js';
 import { buildAllRecommendations } from '../services/SolarMatchingService.js';
 import logger from '../utils/logger.js';
+
+// ── Calculator input bounds ───────────────────────────────────────────────────
+// The sizing math runs on these numbers, so cap them server-side: this rejects
+// malformed (non-numeric) and abusive (negative / absurdly large) values that
+// would otherwise skew results or be used to burn CPU. Unknown keys are allowed
+// so the frontend can evolve its payload without breaking; bounds are generous.
+const applianceItemSchema = Joi.object({
+  id:              Joi.string().max(64).allow(null, ''),
+  name:            Joi.string().max(120).allow(null, ''),
+  watts:           Joi.number().min(0).max(100000),
+  qty:             Joi.number().integer().min(0).max(1000),
+  hours:           Joi.number().min(0).max(24),
+  surgeMultiplier: Joi.number().min(1).max(10),
+}).unknown(true);
+
+const calcInputSchema = Joi.object({
+  appliances:        Joi.array().items(applianceItemSchema).min(1).max(100).required(),
+  location:          Joi.string().max(120).allow(null, ''),
+  autonomyHours:     Joi.number().min(0).max(72),
+  batteryType:       Joi.string().max(40).allow(null, ''),
+  homeType:          Joi.string().max(60).allow(null, ''),
+  criticalLoadsOnly: Joi.boolean(),
+}).unknown(true);
+
+/** Validate a calculator body; returns sanitized value or throws a 400 message. */
+const validateCalcInput = (body) => {
+  const { error, value } = calcInputSchema.validate(body);
+  if (error) {
+    const e = new Error(error.details[0].message);
+    e.status = 400;
+    throw e;
+  }
+  return value;
+};
 
 // ── Guest token — same pattern as your cart controller ────────────────────────
 const resolveGuestToken = (req) =>
@@ -141,7 +176,7 @@ export const calculate = async (req, res) => {
       batteryType,
       homeType,
       criticalLoadsOnly = false,
-    } = req.body;
+    } = validateCalcInput(req.body);
 
     const [appliances, settings] = await Promise.all([
       resolveAppliances(inputAppliances, criticalLoadsOnly),
@@ -165,6 +200,7 @@ export const calculate = async (req, res) => {
       input: { location, autonomyHours, batteryType, homeType, criticalLoadsOnly },
     });
   } catch (err) {
+    if (err.status === 400) return res.status(400).json({ message: err.message });
     logger.error('solar calculate error: ' + err.message);
     return res.status(500).json({ message: 'Server error' });
   }
@@ -199,7 +235,7 @@ export const findSystems = async (req, res) => {
       autonomyHours,
       batteryType,
       criticalLoadsOnly = false,
-    } = req.body;
+    } = validateCalcInput(req.body);
 
     const [appliances, settings] = await Promise.all([
       resolveAppliances(inputAppliances, criticalLoadsOnly),
@@ -291,6 +327,7 @@ export const findSystems = async (req, res) => {
       },
     });
   } catch (err) {
+    if (err.status === 400) return res.status(400).json({ message: err.message });
     logger.error('findSystems error: ' + err.message);
     return res.status(500).json({ message: 'Server error' });
   }

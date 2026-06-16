@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import {api} from '../../utils/api';
 import { useAuth } from '../../context/AuthContext.jsx';
+import AuthModal from '../../Auth/AuthModal.jsx';
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 const fmt   = (n)   => '₦' + (n ?? 0).toLocaleString('en-NG');
@@ -402,10 +403,14 @@ const OrderDetail = () => {
   const { orderId }     = useParams();
   const navigate        = useNavigate();
   const [params]        = useSearchParams();
+  const { isLoggedIn }  = useAuth();
 
   const [order,      setOrder]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
+  const [errStatus,  setErrStatus]  = useState(null);   // HTTP status of load failure
+  const [authOpen,   setAuthOpen]   = useState(false);
+  const [authView,   setAuthView]   = useState('login');
   const [showCancel, setShowCancel] = useState(false);
   const [showReturn, setShowReturn] = useState(false);
   const [cancelMsg,  setCancelMsg]  = useState(null);
@@ -426,14 +431,23 @@ const OrderDetail = () => {
 
   const load = useCallback(() => {
     if (!orderId) return;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setErrStatus(null);
     api.get(`/orders/my/${orderId}`)
       .then(r => setOrder(r.data?.data ?? r.data))
-      .catch(e => setError(e?.response?.data?.message ?? 'Could not load order.'))
+      .catch(e => {
+        setErrStatus(e?.response?.status ?? null);
+        setError(e?.response?.data?.message ?? 'Could not load order.');
+      })
       .finally(() => setLoading(false));
   }, [orderId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // If the visitor signs in (e.g. via the gate below) while viewing an order
+  // that needs auth, retry automatically — the cookie now proves ownership.
+  useEffect(() => {
+    if (isLoggedIn && errStatus === 401) load();
+  }, [isLoggedIn, errStatus, load]);
 
   const handleCancelSuccess = (updatedOrder, msg) => {
     setOrder(updatedOrder);
@@ -470,15 +484,58 @@ const OrderDetail = () => {
   );
 
   /* ── error ───────────────────────────────────────────────────────────────── */
-  if (error) return (
-    <div className="max-w-5xl mx-auto p-8 bg-white min-h-screen">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-[#B8A98A] hover:text-[#1A1102] text-sm mb-8"><ArrowLeft size={16}/> Back</button>
-      <div className="mt-24 text-center">
-        <p className="text-sm text-red-400 mb-4">{error}</p>
-        <button onClick={load} className="px-5 py-2.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-bold text-sm">Retry</button>
+  if (error) {
+    // 401 → not signed in. The most common legitimate case: the order owner
+    // opened the email link on a device where they're logged out. Offer sign-in
+    // (after which the load auto-retries), not a Retry that can only re-fail.
+    const needsAuth = errStatus === 401;
+    // 404 → request was authenticated/identified but the order isn't on this
+    // account (different user clicked the link, or wrong account is signed in).
+    // We never reveal whether the order exists — just that it's not theirs.
+    const notFound  = errStatus === 404;
+
+    return (
+      <div className="max-w-5xl mx-auto p-8 bg-white min-h-screen">
+        <button onClick={() => navigate('/')} className="flex items-center gap-2 text-[#B8A98A] hover:text-[#1A1102] text-sm mb-8"><ArrowLeft size={16}/> Back to store</button>
+        <div className="mt-24 text-center max-w-md mx-auto">
+          {needsAuth ? (
+            <>
+              <p className="text-5xl mb-5">🔒</p>
+              <h2 className="text-2xl font-black text-[#1A1102] mb-2">Sign in to view this order</h2>
+              <p className="text-gray-400 text-sm mb-6">
+                This order is private to the account it was placed with. Sign in with that account to see its status and tracking.
+              </p>
+              <button
+                onClick={() => setAuthOpen(true)}
+                className="px-8 py-3.5 rounded-2xl bg-[#FFAA14] text-white font-black text-sm hover:bg-amber-500 transition-all"
+              >
+                Sign In →
+              </button>
+            </>
+          ) : notFound ? (
+            <>
+              <p className="text-5xl mb-5">🔍</p>
+              <h2 className="text-2xl font-black text-[#1A1102] mb-2">Order not found</h2>
+              <p className="text-gray-400 text-sm mb-6">
+                We couldn't find this order on your account. If you have more than one account, try signing in with the one used to place the order.
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <button onClick={() => navigate('/account/orders')} className="px-5 py-2.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-bold text-sm">View my orders</button>
+                <button onClick={() => navigate('/')} className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50">Go to store</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-red-400 mb-4">{error}</p>
+              <button onClick={load} className="px-5 py-2.5 rounded-xl bg-[#FFAA14] text-[#1A1102] font-bold text-sm">Retry</button>
+            </>
+          )}
+        </div>
+
+        <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} view={authView} setView={setAuthView} />
       </div>
-    </div>
-  );
+    );
+  }
 
   /* ── main ────────────────────────────────────────────────────────────────── */
   return (

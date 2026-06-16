@@ -118,6 +118,13 @@ export const handleTrackPageView = asyncHandler(async (req, res) => {
     return res.status(204).end();   // silently ignore bad requests
   }
 
+  // Honor the visitor's cookie decision server-side: a logged-in user who has
+  // turned analytics off is never recorded, even if a stray track call arrives.
+  // (Guests are gated client-side in usePageTracking — req.user is null here.)
+  if (req.user?.cookieConsent && req.user.cookieConsent.analytics === false) {
+    return res.status(204).end();
+  }
+
   // Normalise: strip query string, limit length
   const normPath = path.split('?')[0].slice(0, 500);
 

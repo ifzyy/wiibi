@@ -9,7 +9,7 @@ import api from '../utils/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import AccountManagement from './settings/AccountManageMent.jsx';
 import AccountDetailsTab from './settings/AccountDetails.jsx';
-import SolarHistoryTab from './settings/Solarhistory.jsx';
+import SolarHistoryTab from './settings/SolarHistory.jsx';
 import TrackOrderTab from './settings/TrackOrderTab.jsx';
 import SavedCartTab from './settings/SavedCart.jsx';
 import OrderDetail from './settings/OrderDetail.jsx';

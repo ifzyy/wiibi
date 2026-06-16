@@ -11,12 +11,21 @@ import { AuthError } from './AppError.js';
 const ACCESS_SECRET  = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
+// Algorithm is pinned everywhere we sign/verify. Passing an explicit allow-list
+// to jwt.verify is what blocks `alg:none` and algorithm-confusion attacks — a
+// token is only accepted if it was signed with exactly this symmetric algo.
+export const JWT_ALG = 'HS256';
+
 if (process.env.NODE_ENV === 'production') {
   if (!ACCESS_SECRET || !REFRESH_SECRET) {
     throw new Error('[Jwt] JWT_SECRET and JWT_REFRESH_SECRET must be set in production');
   }
   if (ACCESS_SECRET === REFRESH_SECRET) {
     throw new Error('[Jwt] JWT_SECRET and JWT_REFRESH_SECRET must be different values');
+  }
+  // A short secret is brute-forceable offline; require ≥32 chars (256 bits).
+  if (ACCESS_SECRET.length < 32 || REFRESH_SECRET.length < 32) {
+    throw new Error('[Jwt] JWT_SECRET and JWT_REFRESH_SECRET must each be at least 32 characters');
   }
 }
 
@@ -26,17 +35,19 @@ const REFRESH = REFRESH_SECRET || 'dev_refresh_secret';
 
 export const signAccessToken = (payload) =>
   jwt.sign(payload, ACCESS, {
+    algorithm: JWT_ALG,
     expiresIn: process.env.JWT_ACCESS_EXPIRES || '15m',
   });
 
 export const signRefreshToken = (payload) =>
   jwt.sign(payload, REFRESH, {
+    algorithm: JWT_ALG,
     expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d',
   });
 
 export const verifyAccessToken = (token) => {
   try {
-    return jwt.verify(token, ACCESS);
+    return jwt.verify(token, ACCESS, { algorithms: [JWT_ALG] });
   } catch {
     throw new AuthError('Invalid or expired access token');
   }
@@ -44,7 +55,7 @@ export const verifyAccessToken = (token) => {
 
 export const verifyRefreshToken = (token) => {
   try {
-    return jwt.verify(token, REFRESH);
+    return jwt.verify(token, REFRESH, { algorithms: [JWT_ALG] });
   } catch {
     throw new AuthError('Invalid or expired refresh token');
   }

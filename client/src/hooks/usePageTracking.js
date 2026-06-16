@@ -6,12 +6,15 @@
  * analytics must never slow down or break the site, so all errors are
  * swallowed. Admin routes are excluded — staff activity isn't traffic.
  *
- * The server hashes the IP with a daily salt for unique-visitor counts;
- * nothing personally identifying is sent or stored beyond that.
+ * Respects the visitor's cookie choice: when analytics consent is off, no
+ * tracking call is made at all (the server enforces the same for logged-in
+ * users as a backstop). The server hashes the IP with a daily salt for
+ * unique-visitor counts; nothing personally identifying is sent or stored.
  */
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../utils/api.js';
+import { hasConsent } from '../utils/cookieConsent.js';
 
 const getSessionId = () => {
   let id = sessionStorage.getItem('wb_session');
@@ -28,6 +31,7 @@ export default function usePageTracking() {
 
   useEffect(() => {
     if (pathname.startsWith('/admin')) return;
+    if (!hasConsent('analytics')) return;        // visitor opted out of analytics
     if (lastPath.current === pathname) return;
     lastPath.current = pathname;
 

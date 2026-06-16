@@ -18,6 +18,10 @@ import db  from '../models/index.js';
 
 const User = db.User;
 
+// Pin the signing algorithm on every verify so a forged `alg:none` (or an
+// algorithm-confusion) token can never be accepted.
+const JWT_VERIFY_OPTS = { algorithms: ['HS256'] };
+
 /**
  * extractToken
  * Cookie-first, then Authorization header.
@@ -42,7 +46,7 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, JWT_VERIFY_OPTS);
     const user    = await User.findByPk(decoded.id, {
       attributes: { exclude: ['password'] },
     });
@@ -84,7 +88,7 @@ export const optionalAuth = async (req, res, next) => {
   try {
     const token = extractToken(req);
     if (token) {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, JWT_VERIFY_OPTS);
       const user    = await User.findByPk(decoded.id, {
         attributes: { exclude: ['password'] },
       });
@@ -110,7 +114,7 @@ export const optionalAuthenticate = async (req, _res, next) => {
     if (!header?.startsWith('Bearer ')) return next();
 
     const token   = header.split(' ')[1];
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, JWT_VERIFY_OPTS);
 
     const user = await db.User.findByPk(payload.id, {
       attributes: ['id', 'role', 'isActive', 'email'],

@@ -2,7 +2,7 @@
 // App.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { CartProvider } from "./context/CartContext.jsx";
 import { CalculatorModalProvider } from "./context/CalculatorModalContext.jsx";
@@ -33,14 +33,37 @@ import SolarCalculatorPage from "./pages/SolarCalculator/SolarCalculatorPage";
 import GoogleCallbackPage from "./pages/GoogleCallbackPage.jsx";
 import OneTapProvider from "./components/OneTapProvider.jsx";
 import usePageTracking from "./hooks/usePageTracking.js";
+import { useEffect } from "react";
+import { useAuth } from "./context/AuthContext.jsx";
+import { hydrateConsent } from "./utils/cookieConsent.js";
 // Admin — completely isolated from public context, and lazy-loaded so the
 // entire dashboard (rich-text editor, drag-and-drop, admin pages) stays out
 // of the public bundle. Public visitors never download it.
 const AdminDashboard = lazy(() => import("./admin/AdminDashboard"));
 // Records public page views for admin analytics. Must live inside
-// BrowserRouter; renders nothing.
+// BrowserRouter; renders nothing. Also mirrors a logged-in user's saved
+// cookie consent into localStorage so site-wide gating reflects their choice.
 const PageTracker = () => {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user?.cookieConsent) hydrateConsent(user.cookieConsent);
+  }, [user?.cookieConsent]);
   usePageTracking();
+  return null;
+};
+
+// Option A admin subdomain: the same build is served on admin.wiibienergy.com.
+// When we're on an "admin." host, send every non-/admin path straight to the
+// dashboard so the subdomain behaves as an admin-only entrypoint. On the public
+// host (and localhost) this is a no-op.
+const isAdminHost =
+  typeof window !== "undefined" && window.location.hostname.startsWith("admin.");
+
+const AdminHostRedirect = () => {
+  const { pathname } = useLocation();
+  if (isAdminHost && !pathname.startsWith("/admin")) {
+    return <Navigate to="/admin" replace />;
+  }
   return null;
 };
 
@@ -62,6 +85,7 @@ export default function App() {
           <CalculatorModalProvider>
           <OneTapProvider />
           <PageTracker />
+          <AdminHostRedirect />
           <Routes>
             {/* ── Public site ─────────────────────────────────────────────── */}
             <Route

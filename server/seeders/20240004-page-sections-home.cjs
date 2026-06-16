@@ -25,6 +25,9 @@ const HERO_CONTENT = {
   button2_text:       "learn more",
   button2_link:       "tel:09162102080",
   hero_image:         "media-hero-01",
+  // Optional: paste a YouTube URL to autoplay a video in the hero instead of
+  // the image (set in admin → Home editor). Blank = use hero_image.
+  hero_video_url:     "",
   // Bottom bar
   question_text:      "HOW MUCH DO YOU SPEND ON POWER?",
   confidence_text:    "Lets fix your expenses",

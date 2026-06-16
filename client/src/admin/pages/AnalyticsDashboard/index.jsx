@@ -1,7 +1,7 @@
 import { C, fmtCurrency } from './constants.js';
 import { PageHeader, PageBody, StatCard, IBtn, Toast, GlobalStyles, Empty } from './Ui.jsx';
 import { useAnalytics } from './hooks/useAnalytics.js';
-import RevenueChart from './components/RevenueChart.jsx';
+import RevenueChart from './components/revenueChart.jsx';
 
 const STATUS_ORDER = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
 const PAYMENT_ORDER = ['paid', 'unpaid', 'failed', 'refunded', 'partially_refunded'];

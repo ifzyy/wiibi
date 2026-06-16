@@ -19,7 +19,7 @@ import {
   FieldLabel, StepHeader, Divider, Stepper, Toggle,
   UploadZone, FileRow, AddButton, TagChip, SelectField,
   ALL_TAGS, MAX_TAGS, MAX_SPECS,
-} from "./drawerConstants";
+} from "./DrawerConstants";
 
 
 // ─────────────────────────────────────────────────────────────────────────────

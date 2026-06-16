@@ -64,7 +64,9 @@ export default (sequelize, DataTypes) => {
       },
       // ── Role & status ─────────────────────────────────────────────────────
       role: {
-        type:         DataTypes.ENUM('user', 'admin'),
+        // 'staff' = limited back-office operator (support, orders, products);
+        // 'admin' = full access. See requireRole gating + StaffService.
+        type:         DataTypes.ENUM('user', 'staff', 'admin'),
         allowNull:    false,
         defaultValue: 'user',
       },
@@ -83,6 +85,16 @@ export default (sequelize, DataTypes) => {
         type:      DataTypes.JSON,
         allowNull: true,
         field:     'shipping_address',
+      },
+
+      // ── Privacy: saved cookie consent ─────────────────────────────────────
+      // { analytics, marketing, personalization, updatedAt }. NULL = no
+      // explicit choice yet (app uses its defaults). Honored server-side, e.g.
+      // page-view tracking is skipped when analytics is false.
+      cookieConsent: {
+        type:      DataTypes.JSON,
+        allowNull: true,
+        field:     'cookie_consent',
       },
     },
     {
@@ -124,6 +136,7 @@ export default (sequelize, DataTypes) => {
       lastLoginAt:     this.lastLoginAt,
       passwordSetAt:   this.passwordSetAt,
       shippingAddress: this.shippingAddress,
+      cookieConsent:   this.cookieConsent ?? null,
       createdAt:       this.createdAt,
       updatedAt:       this.updatedAt,
     };

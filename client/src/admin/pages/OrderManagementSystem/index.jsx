@@ -15,7 +15,7 @@ import { useOrders } from "./hooks/useOrders.js";
 import { FontLink, Toast, ErrorBanner } from "./components/Ui.jsx";
 import PageHeader  from "./components/PageHeader.jsx";
 import StatsRow    from "./components/StatsRow.jsx";
-import FilterBar   from "./components/FilterBar.jsx";
+import FilterBar   from "./components/Filterbar.jsx";
 import OrdersTable from "./components/OrdersTable.jsx";
 import OrderDrawer from "./components/OrderDrawer.jsx";
 import UpdateModal from "./components/UpdateModal.jsx";

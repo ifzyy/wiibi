@@ -31,7 +31,7 @@ import {
   MAX_IMAGES,
   UploadZone,
   FileRow,
-} from "./drawerConstants";
+} from "./DrawerConstants";
 import {
   GeneralTab,
   ContentTab,
